@@ -44,6 +44,7 @@ jobs:
           repository: sunbird84/tden-chain
           ref: ${{ inputs.chain_ref }}
           path: source/tden-chain
+          ssh-key: ${{ secrets.TDEN_CHAIN_SOURCE_DEPLOY_KEY }}
           persist-credentials: false
 
       - name: Check out Gateway source
@@ -52,6 +53,7 @@ jobs:
           repository: sunbird84/tden-gateway
           ref: ${{ inputs.gateway_ref }}
           path: source/tden-gateway
+          ssh-key: ${{ secrets.TDEN_GATEWAY_SOURCE_DEPLOY_KEY }}
           persist-credentials: false
 
       - name: Check out deployment source
@@ -60,6 +62,7 @@ jobs:
           repository: sunbird84/tden-deploy
           ref: ${{ inputs.deploy_ref }}
           path: source/deploy
+          ssh-key: ${{ secrets.TDEN_DEPLOY_SOURCE_DEPLOY_KEY }}
           persist-credentials: false
 
       - name: Install Go toolchain
