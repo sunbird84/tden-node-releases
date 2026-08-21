@@ -1,0 +1,182 @@
+name: Build TDEN node candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      chain_ref:
+        description: Exact tden-chain commit or tag
+        required: true
+        type: string
+      gateway_ref:
+        description: Exact tden-gateway commit or tag
+        required: true
+        type: string
+      deploy_ref:
+        description: Exact tden-deploy commit or tag
+        required: true
+        type: string
+      version:
+        description: Semantic package version
+        required: true
+        default: 0.12.0
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: node-candidate-${{ inputs.chain_ref }}-${{ inputs.gateway_ref }}-${{ inputs.deploy_ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out release repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Check out Chain source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: sunbird84/tden-chain
+          ref: ${{ inputs.chain_ref }}
+          path: source/tden-chain
+          persist-credentials: false
+
+      - name: Check out Gateway source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: sunbird84/tden-gateway
+          ref: ${{ inputs.gateway_ref }}
+          path: source/tden-gateway
+          persist-credentials: false
+
+      - name: Check out deployment source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: sunbird84/tden-deploy
+          ref: ${{ inputs.deploy_ref }}
+          path: source/deploy
+          persist-credentials: false
+
+      - name: Install Go toolchain
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.26.5
+          cache-dependency-path: |
+            source/tden-chain/go.sum
+            source/tden-gateway/go.sum
+
+      - name: Verify source revisions are exact and clean
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = @{
+            'source/tden-chain' = '${{ inputs.chain_ref }}'
+            'source/tden-gateway' = '${{ inputs.gateway_ref }}'
+            'source/deploy' = '${{ inputs.deploy_ref }}'
+          }
+          foreach ($entry in $expected.GetEnumerator()) {
+            $head = (git -C $entry.Key rev-parse HEAD).Trim()
+            $resolved = (git -C $entry.Key rev-parse "$($entry.Value)^{commit}").Trim()
+            if ($head -cne $resolved) { throw "source revision mismatch: $($entry.Key)" }
+            if (git -C $entry.Key status --porcelain=v1) { throw "dirty source checkout: $($entry.Key)" }
+          }
+
+      - name: Verify fixed release trust policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re
+          policy = json.loads(pathlib.Path('release-policy.json').read_text(encoding='utf-8'))
+          if set(policy) != {'protocol', 'bootstrap_trust_template_sha256', 'tuf_root_sha256'}:
+              raise SystemExit('release policy fields are invalid')
+          if policy['protocol'] != 'tden:node-release-policy:v1':
+              raise SystemExit('release policy protocol is invalid')
+          files = {
+              'bootstrap_trust_template_sha256': pathlib.Path('source/deploy/node-installer/trust/bootstrap-trust-template.production.json'),
+              'tuf_root_sha256': pathlib.Path('source/deploy/node-installer/trust/tuf-root.production.json'),
+          }
+          for key, path in files.items():
+              value = policy.get(key, '')
+              if not re.fullmatch(r'[0-9a-f]{64}', value):
+                  raise SystemExit(f'{key} is invalid')
+              if hashlib.sha256(path.read_bytes()).hexdigest() != value:
+                  raise SystemExit(f'{path} conflicts with release-policy.json')
+          PY
+
+      - name: Run source tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd source/tden-chain && go test ./...)
+          (cd source/tden-gateway && go test ./...)
+          bash -n source/deploy/node-installer/*.sh
+          pwsh -NoProfile -File source/deploy/node-installer/test-install-state-root.ps1
+
+      - name: Build deterministic Linux package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path output/package -Force | Out-Null
+          & source/deploy/node-installer/build-node-package.ps1 `
+            -OutputDirectory output/package `
+            -BootstrapTrustTemplate source/deploy/node-installer/trust/bootstrap-trust-template.production.json `
+            -TufRoot source/deploy/node-installer/trust/tuf-root.production.json `
+            -ReleaseTrustTemplate source/deploy/node-installer/trust/release-trust-template.production.json `
+            -ApprovalAttestationAllowlist source/deploy/node-installer/trust/approval-attestations.fail-closed.txt `
+            -LifecycleGatewayTrust source/deploy/node-installer/trust/lifecycle-gateway-trust.production.json `
+            -Profile public `
+            -Architecture amd64 `
+            -Version '${{ inputs.version }}'
+
+      - name: Archive and describe candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/release
+          SOURCE_DATE_EPOCH=0 bash source/deploy/node-installer/archive-node-package.sh \
+            output/package output/release/tden-node-linux-amd64.tar.gz
+          (cd output/release && sha256sum tden-node-linux-amd64.tar.gz > tden-node-linux-amd64.tar.gz.sha256)
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path('output/release')
+          package = json.loads(pathlib.Path('output/package/package-metadata.json').read_text(encoding='utf-8'))
+          policy = json.loads(pathlib.Path('release-policy.json').read_text(encoding='utf-8'))
+          if package['bootstrap_trust_template_sha256'] != policy['bootstrap_trust_template_sha256']:
+              raise SystemExit('package bootstrap trust digest conflicts with release policy')
+          if package['tuf_root_sha256'] != policy['tuf_root_sha256']:
+              raise SystemExit('package TUF root digest conflicts with release policy')
+          data = {
+              'protocol': 'tden:node-candidate-build:v1',
+              'workflow_repository': os.environ['GITHUB_REPOSITORY'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'chain_commit': subprocess.check_output(['git', '-C', 'source/tden-chain', 'rev-parse', 'HEAD'], text=True).strip(),
+              'gateway_commit': subprocess.check_output(['git', '-C', 'source/tden-gateway', 'rev-parse', 'HEAD'], text=True).strip(),
+              'deploy_commit': subprocess.check_output(['git', '-C', 'source/deploy', 'rev-parse', 'HEAD'], text=True).strip(),
+              'version': '${{ inputs.version }}',
+              'archive_sha256': subprocess.check_output(['sha256sum', root / 'tden-node-linux-amd64.tar.gz'], text=True).split()[0],
+              'archive_bytes': (root / 'tden-node-linux-amd64.tar.gz').stat().st_size,
+              'bootstrap_trust_template_sha256': package['bootstrap_trust_template_sha256'],
+              'tuf_root_sha256': package['tuf_root_sha256'],
+          }
+          (root / 'candidate-build.json').write_text(json.dumps(data, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+
+      - name: Upload candidate without publishing a Release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tden-node-candidate-${{ github.run_id }}
+          path: output/release/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Attest candidate archive
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: output/release/tden-node-linux-amd64.tar.gz

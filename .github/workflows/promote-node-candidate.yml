@@ -1,0 +1,152 @@
+name: Promote accepted TDEN node candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful Build TDEN node candidate workflow run ID
+        required: true
+        type: string
+      expected_sha256:
+        description: Archive SHA-256 accepted by the multi-node test
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: stable-node-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: stable-node-release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+    steps:
+      - name: Check out release repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Verify candidate workflow origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" > run.json
+          workflow_id="$(python3 -c 'import json; print(json.load(open("run.json"))["workflow_id"])')"
+          [[ "$workflow_id" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" > workflow.json
+          python3 - <<'PY'
+          import json, os
+          run = json.load(open('run.json', encoding='utf-8'))
+          workflow = json.load(open('workflow.json', encoding='utf-8'))
+          expected = {
+              'id': int(os.environ['CANDIDATE_RUN_ID']),
+              'event': 'workflow_dispatch',
+              'status': 'completed',
+              'conclusion': 'success',
+          }
+          for key, value in expected.items():
+              if run.get(key) != value:
+                  raise SystemExit(f'candidate workflow {key} mismatch')
+          if run.get('head_repository', {}).get('full_name') != os.environ['GITHUB_REPOSITORY']:
+              raise SystemExit('candidate workflow repository mismatch')
+          if workflow.get('id') != run.get('workflow_id') or workflow.get('path') != '.github/workflows/build-node-candidate.yml':
+              raise SystemExit('candidate workflow definition mismatch')
+          PY
+
+      - name: Download exact candidate artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir candidate
+          gh run download "$CANDIDATE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "tden-node-candidate-$CANDIDATE_RUN_ID" \
+            --dir candidate
+          find candidate -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > candidate-files.txt
+          diff -u <(printf '%s\n' candidate-build.json tden-node-linux-amd64.tar.gz tden-node-linux-amd64.tar.gz.sha256 | LC_ALL=C sort) candidate-files.txt
+
+      - name: Verify accepted digest and build description
+        id: describe
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd candidate && sha256sum --strict --check tden-node-linux-amd64.tar.gz.sha256)
+          actual_sha256="$(sha256sum candidate/tden-node-linux-amd64.tar.gz | cut -d' ' -f1)"
+          archive_bytes="$(stat -c %s candidate/tden-node-linux-amd64.tar.gz)"
+          [[ "$actual_sha256" == "$EXPECTED_SHA256" ]]
+          CANDIDATE_SHA256="$actual_sha256" ARCHIVE_BYTES="$archive_bytes" python3 - <<'PY'
+          import json, os, re
+          path = 'candidate/candidate-build.json'
+          data = json.load(open(path, encoding='utf-8'))
+          policy = json.load(open('release-policy.json', encoding='utf-8'))
+          if data.get('protocol') != 'tden:node-candidate-build:v1':
+              raise SystemExit('candidate description protocol is invalid')
+          if data.get('workflow_repository') != os.environ['GITHUB_REPOSITORY']:
+              raise SystemExit('candidate description repository mismatch')
+          if str(data.get('workflow_run_id')) != os.environ['CANDIDATE_RUN_ID']:
+              raise SystemExit('candidate description run ID mismatch')
+          if data.get('archive_sha256') != os.environ['CANDIDATE_SHA256']:
+              raise SystemExit('candidate description digest mismatch')
+          if data.get('archive_bytes') != int(os.environ['ARCHIVE_BYTES']):
+              raise SystemExit('candidate description size mismatch')
+          if not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z.+-]{0,63}', data.get('version', '')):
+              raise SystemExit('candidate version is invalid')
+          for key in ('chain_commit', 'gateway_commit', 'deploy_commit'):
+              if not re.fullmatch(r'[0-9a-f]{40}', data.get(key, '')):
+                  raise SystemExit(f'{key} is invalid')
+          for key in ('bootstrap_trust_template_sha256', 'tuf_root_sha256'):
+              if not re.fullmatch(r'[0-9a-f]{64}', data.get(key, '')) or data[key] != policy.get(key):
+                  raise SystemExit(f'{key} conflicts with release policy')
+          PY
+          version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-build.json"))["version"])')"
+          version_slug="$(printf '%s' "$version" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g; s/-+/-/g')"
+          release_tag="node-${version_slug}-run-${CANDIDATE_RUN_ID}-${actual_sha256}"
+          printf 'archive_sha256=%s\n' "$actual_sha256" >> "$GITHUB_OUTPUT"
+          printf 'archive_bytes=%s\n' "$archive_bytes" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the accepted archive without rebuilding
+        shell: bash
+        env:
+          ARCHIVE_SHA256: ${{ steps.describe.outputs.archive_sha256 }}
+          ARCHIVE_BYTES: ${{ steps.describe.outputs.archive_bytes }}
+          RELEASE_TAG: ${{ steps.describe.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os, pathlib
+          build = json.load(open('candidate/candidate-build.json', encoding='utf-8'))
+          body = (
+              f"Archive SHA-256: {os.environ['ARCHIVE_SHA256']}\n"
+              f"Archive bytes: {os.environ['ARCHIVE_BYTES']}\n"
+              f"Candidate workflow run: {build['workflow_run_id']}\n"
+              f"Chain commit: {build['chain_commit']}\n"
+              f"Gateway commit: {build['gateway_commit']}\n"
+              f"Deploy commit: {build['deploy_commit']}\n"
+              f"Bootstrap trust template SHA-256: {build['bootstrap_trust_template_sha256']}\n"
+              f"TUF root SHA-256: {build['tuf_root_sha256']}\n"
+              "\nThis is the exact archive accepted by the multi-node test. It was not rebuilt during promotion.\n"
+          )
+          pathlib.Path('release-notes.txt').write_text(body, encoding='utf-8')
+          PY
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$RELEASE_TAG" \
+            --notes-file release-notes.txt \
+            --latest \
+            candidate/tden-node-linux-amd64.tar.gz \
+            candidate/tden-node-linux-amd64.tar.gz.sha256 \
+            candidate/candidate-build.json
