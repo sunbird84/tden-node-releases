@@ -118,6 +118,8 @@ jobs:
           set -euo pipefail
           (cd source/tden-chain && go test ./...)
           (cd source/tden-gateway && go test ./...)
+          (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
+          sudo /tmp/tden-node-service-config.test -test.run '^TestReconcilePlanConsumesExactAuthorizationOnce$' -test.v
           bash -n source/deploy/node-installer/*.sh
           pwsh -NoProfile -File source/deploy/node-installer/test-install-state-root.ps1
           pwsh -NoProfile -File source/deploy/node-installer/test-release-isolation.ps1
