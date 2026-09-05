@@ -130,6 +130,7 @@ jobs:
           import json, os, pathlib
           build = json.load(open('candidate/candidate-build.json', encoding='utf-8'))
           body = (
+              "Release channel: stable\n"
               f"Archive SHA-256: {os.environ['ARCHIVE_SHA256']}\n"
               f"Archive bytes: {os.environ['ARCHIVE_BYTES']}\n"
               f"Candidate workflow run: {build['workflow_run_id']}\n"
