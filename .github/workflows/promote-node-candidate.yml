@@ -138,7 +138,8 @@ jobs:
               f"Deploy commit: {build['deploy_commit']}\n"
               f"Bootstrap trust template SHA-256: {build['bootstrap_trust_template_sha256']}\n"
               f"TUF root SHA-256: {build['tuf_root_sha256']}\n"
-              "\nThis is the exact archive accepted by the multi-node test. It was not rebuilt during promotion.\n"
+              "\nPromotion verified the successful candidate build and the submitted archive digest. "
+              "The archive was not rebuilt during promotion. Deployment acceptance results are recorded separately.\n"
           )
           pathlib.Path('release-notes.txt').write_text(body, encoding='utf-8')
           PY
