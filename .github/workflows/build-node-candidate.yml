@@ -121,6 +121,7 @@ jobs:
           (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
           sudo /tmp/tden-node-service-config.test -test.run '^TestReconcilePlanConsumesExactAuthorizationOnce$' -test.v
           bash -n source/deploy/node-installer/*.sh
+          sudo python3 source/deploy/node-installer/test-caddy-handoff.py -v
           pwsh -NoProfile -File source/deploy/node-installer/test-install-state-root.ps1
           pwsh -NoProfile -File source/deploy/node-installer/test-release-isolation.ps1
 
