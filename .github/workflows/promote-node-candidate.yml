@@ -1,34 +1,44 @@
-name: Promote accepted TDEN node candidate
+name: Publish TDEN node candidate
 
 on:
   workflow_dispatch:
     inputs:
+      release_channel:
+        description: Preview for testing; stable only after complete deployment acceptance
+        required: true
+        type: choice
+        options:
+          - preview
+          - stable
+        default: preview
       candidate_run_id:
         description: Successful Build TDEN node candidate workflow run ID
         required: true
         type: string
       expected_sha256:
-        description: Archive SHA-256 accepted by the multi-node test
+        description: Exact candidate archive SHA-256; stable requires completed acceptance
         required: true
         type: string
 
 permissions:
   actions: read
+  attestations: read
   contents: write
 
 concurrency:
-  group: stable-node-release
+  group: node-release-${{ inputs.release_channel }}
   cancel-in-progress: false
 
 jobs:
   promote:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    environment: stable-node-release
+    environment: ${{ inputs.release_channel == 'stable' && 'stable-node-release' || 'preview-node-release' }}
     env:
       GH_TOKEN: ${{ github.token }}
       CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
       EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
     steps:
       - name: Check out release repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -39,6 +49,7 @@ jobs:
           set -euo pipefail
           [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$RELEASE_CHANNEL" == preview || "$RELEASE_CHANNEL" == stable ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" > run.json
           workflow_id="$(python3 -c 'import json; print(json.load(open("run.json"))["workflow_id"])')"
           [[ "$workflow_id" =~ ^[1-9][0-9]*$ ]]
@@ -73,6 +84,15 @@ jobs:
             --dir candidate
           find candidate -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > candidate-files.txt
           diff -u <(printf '%s\n' candidate-build.json tden-node-linux-amd64.tar.gz tden-node-linux-amd64.tar.gz.sha256 | LC_ALL=C sort) candidate-files.txt
+
+      - name: Verify GitHub-hosted build provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh attestation verify candidate/tden-node-linux-amd64.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-node-candidate.yml" \
+            --deny-self-hosted-runners
 
       - name: Verify accepted digest and build description
         id: describe
@@ -114,7 +134,7 @@ jobs:
           printf 'archive_bytes=%s\n' "$archive_bytes" >> "$GITHUB_OUTPUT"
           printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
 
-      - name: Publish the accepted archive without rebuilding
+      - name: Publish the exact archive without rebuilding
         shell: bash
         env:
           ARCHIVE_SHA256: ${{ steps.describe.outputs.archive_sha256 }}
@@ -122,15 +142,11 @@ jobs:
           RELEASE_TAG: ${{ steps.describe.outputs.release_tag }}
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "release already exists: $RELEASE_TAG" >&2
-            exit 1
-          fi
           python3 - <<'PY'
           import json, os, pathlib
           build = json.load(open('candidate/candidate-build.json', encoding='utf-8'))
           body = (
-              "Release channel: stable\n"
+              f"Release channel: {os.environ['RELEASE_CHANNEL']}\n"
               f"Archive SHA-256: {os.environ['ARCHIVE_SHA256']}\n"
               f"Archive bytes: {os.environ['ARCHIVE_BYTES']}\n"
               f"Candidate workflow run: {build['workflow_run_id']}\n"
@@ -139,16 +155,59 @@ jobs:
               f"Deploy commit: {build['deploy_commit']}\n"
               f"Bootstrap trust template SHA-256: {build['bootstrap_trust_template_sha256']}\n"
               f"TUF root SHA-256: {build['tuf_root_sha256']}\n"
-              "\nPromotion verified the successful candidate build and the submitted archive digest. "
-              "The archive was not rebuilt during promotion. Deployment acceptance results are recorded separately.\n"
+              "\nPublication verified the official build origin and the exact archive digest. "
+              "The archive was not rebuilt. Deployment acceptance results are recorded separately.\n"
           )
+          if os.environ['RELEASE_CHANNEL'] == 'preview':
+              body += (
+                  "\nFor controlled installation testing only; full deployment acceptance is incomplete. "
+                  "This is not a stable release, TUF promotion or DAO upgrade approval. "
+                  "Enable test releases in Node Console. Existing nodes and accounts are unchanged.\n"
+                  "\n仅供受控安装测试，完整部署验收尚未完成。不是稳定版、TUF 晋升或 DAO 升级批准。"
+                  "请在控制台勾选包含测试版；本次发布不改变已有节点和账户。\n"
+              )
           pathlib.Path('release-notes.txt').write_text(body, encoding='utf-8')
           PY
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$RELEASE_TAG" \
-            --notes-file release-notes.txt \
-            --latest \
+          # Resume only an unfinished preview with the same immutable digest tag.
+          # 只允许续传同一摘要标签的预览草稿，已发布版本不能覆盖。
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,isPrerelease > existing-release.json 2>/dev/null; then
+            [[ "$RELEASE_CHANNEL" == preview ]]
+            python3 - <<'PY'
+          import json
+          release = json.load(open('existing-release.json', encoding='utf-8'))
+          if release.get('isDraft') is not True or release.get('isPrerelease') is not True:
+              raise SystemExit('only an unpublished preview may be resumed')
+          PY
+          else
+            flags=(--draft --latest=false)
+            if [[ "$RELEASE_CHANNEL" == preview ]]; then flags+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" --notes-file release-notes.txt "${flags[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
             candidate/tden-node-linux-amd64.tar.gz \
             candidate/tden-node-linux-amd64.tar.gz.sha256 \
             candidate/candidate-build.json
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets > uploaded-assets.json
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          assets = json.load(open('uploaded-assets.json', encoding='utf-8'))['assets']
+          files = {path.name: path for path in pathlib.Path('candidate').iterdir()}
+          if len(assets) != len(files) or {asset['name'] for asset in assets} != set(files):
+              raise SystemExit('uploaded asset set mismatch')
+          for asset in assets:
+              path = files[asset['name']]
+              with path.open('rb') as source:
+                  digest = hashlib.file_digest(source, 'sha256').hexdigest()
+              if (asset.get('state') != 'uploaded' or asset.get('size') != path.stat().st_size
+                      or asset.get('digest') != 'sha256:' + digest):
+                  raise SystemExit('uploaded asset digest/size/state mismatch')
+          PY
+          if [[ "$RELEASE_CHANNEL" == preview ]]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --draft=false --prerelease --latest=false --notes-file release-notes.txt
+          else
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --draft=false --prerelease=false --latest --notes-file release-notes.txt
+          fi
