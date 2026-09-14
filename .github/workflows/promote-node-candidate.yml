@@ -44,6 +44,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Verify candidate workflow origin
+        id: origin
         shell: bash
         run: |
           set -euo pipefail
@@ -55,7 +56,7 @@ jobs:
           [[ "$workflow_id" =~ ^[1-9][0-9]*$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" > workflow.json
           python3 - <<'PY'
-          import json, os
+          import json, os, re
           run = json.load(open('run.json', encoding='utf-8'))
           workflow = json.load(open('workflow.json', encoding='utf-8'))
           expected = {
@@ -71,6 +72,17 @@ jobs:
               raise SystemExit('candidate workflow repository mismatch')
           if workflow.get('id') != run.get('workflow_id') or workflow.get('path') != '.github/workflows/build-node-candidate.yml':
               raise SystemExit('candidate workflow definition mismatch')
+          if not re.fullmatch(r'[0-9a-f]{40}', run.get('head_sha', '')) or type(run.get('run_attempt')) is not int or run['run_attempt'] < 1:
+              raise SystemExit('candidate workflow commit/attempt is invalid')
+          PY
+          attempt="$(python3 -c 'import json; print(json.load(open("run.json"))["run_attempt"])')"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/attempts/$attempt/jobs?per_page=100" > candidate-jobs.json
+          python3 - <<'PY'
+          import os
+          from scripts.candidate_metadata import needs_runtime, read_json
+          required = needs_runtime(read_json('candidate-jobs.json'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'runtime_bundle={str(required).lower()}\n')
           PY
 
       - name: Download exact candidate artifact
@@ -89,10 +101,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          source_sha="$(python3 -c 'import json; print(json.load(open("run.json"))["head_sha"])')"
           gh attestation verify candidate/tden-node-linux-amd64.tar.gz \
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-node-candidate.yml" \
-            --deny-self-hosted-runners
+            --signer-digest "$source_sha" --source-digest "$source_sha" \
+            --deny-self-hosted-runners --format json > archive-verification.json
+
+      - name: Verify attested runtime build description
+        if: steps.origin.outputs.runtime_bundle == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(python3 -c 'import json; print(json.load(open("run.json"))["head_sha"])')"
+          gh attestation verify candidate/candidate-build.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-node-candidate.yml" \
+            --signer-digest "$source_sha" --source-digest "$source_sha" \
+            --deny-self-hosted-runners --format json > description-verification.json
 
       - name: Verify accepted digest and build description
         id: describe
@@ -103,36 +129,27 @@ jobs:
           actual_sha256="$(sha256sum candidate/tden-node-linux-amd64.tar.gz | cut -d' ' -f1)"
           archive_bytes="$(stat -c %s candidate/tden-node-linux-amd64.tar.gz)"
           [[ "$actual_sha256" == "$EXPECTED_SHA256" ]]
-          CANDIDATE_SHA256="$actual_sha256" ARCHIVE_BYTES="$archive_bytes" python3 - <<'PY'
-          import json, os, re
-          path = 'candidate/candidate-build.json'
-          data = json.load(open(path, encoding='utf-8'))
-          policy = json.load(open('release-policy.json', encoding='utf-8'))
-          if data.get('protocol') != 'tden:node-candidate-build:v1':
-              raise SystemExit('candidate description protocol is invalid')
-          if data.get('workflow_repository') != os.environ['GITHUB_REPOSITORY']:
-              raise SystemExit('candidate description repository mismatch')
-          if str(data.get('workflow_run_id')) != os.environ['CANDIDATE_RUN_ID']:
-              raise SystemExit('candidate description run ID mismatch')
-          if data.get('archive_sha256') != os.environ['CANDIDATE_SHA256']:
-              raise SystemExit('candidate description digest mismatch')
-          if data.get('archive_bytes') != int(os.environ['ARCHIVE_BYTES']):
-              raise SystemExit('candidate description size mismatch')
-          if not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z.+-]{0,63}', data.get('version', '')):
-              raise SystemExit('candidate version is invalid')
-          for key in ('chain_commit', 'gateway_commit', 'deploy_commit'):
-              if not re.fullmatch(r'[0-9a-f]{40}', data.get(key, '')):
-                  raise SystemExit(f'{key} is invalid')
-          for key in ('bootstrap_trust_template_sha256', 'tuf_root_sha256'):
-              if not re.fullmatch(r'[0-9a-f]{64}', data.get(key, '')) or data[key] != policy.get(key):
-                  raise SystemExit(f'{key} conflicts with release policy')
-          PY
+          python3 scripts/candidate_metadata.py verify
           version="$(python3 -c 'import json; print(json.load(open("candidate/candidate-build.json"))["version"])')"
           version_slug="$(printf '%s' "$version" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g; s/-+/-/g')"
           release_tag="node-${version_slug}-run-${CANDIDATE_RUN_ID}-${actual_sha256}"
           printf 'archive_sha256=%s\n' "$actual_sha256" >> "$GITHUB_OUTPUT"
           printf 'archive_bytes=%s\n' "$archive_bytes" >> "$GITHUB_OUTPUT"
           printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Retain provenance verification records
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: node-provenance-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            run.json
+            workflow.json
+            candidate-jobs.json
+            archive-verification.json
+            description-verification.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Publish the exact archive without rebuilding
         shell: bash
@@ -165,6 +182,17 @@ jobs:
                   "Enable test releases in Node Console. Existing nodes and accounts are unchanged.\n"
                   "\n仅供受控安装测试，完整部署验收尚未完成。不是稳定版、TUF 晋升或 DAO 升级批准。"
                   "请在控制台勾选包含测试版；本次发布不改变已有节点和账户。\n"
+              )
+          if 'runtime_bundle' in build:
+              runtime = build['runtime_bundle']
+              body += (
+                  f"\nPackage manifest SHA-256: {runtime['package_manifest_sha256']}\n"
+                  f"Package metadata SHA-256: {runtime['package_metadata_sha256']}\n"
+                  f"Configuration profile SHA-256: {runtime['configuration_profile_sha256']}\n"
+                  f"Runtime helper SHA-256: {runtime['helper']['sha256']}\n"
+                  f"Build description has a separate GitHub attestation from run {build['workflow_run_id']} "
+                  f"attempt {build['workflow_run_attempt']}, workflow commit {build['workflow_commit']}.\n"
+                  "This binds the original archive and source repository revisions; it is not an offline DAO release signature or whole-node acceptance.\n"
               )
           pathlib.Path('release-notes.txt').write_text(body, encoding='utf-8')
           PY

@@ -116,6 +116,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
           (cd source/tden-chain && go test ./...)
           (cd source/tden-gateway && go test ./...)
           (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
@@ -127,6 +128,7 @@ jobs:
           sudo python3 source/deploy/node-installer/test-lifecycle-history.py -v
           pwsh -NoProfile -File source/deploy/node-installer/test-install-state-root.ps1
           pwsh -NoProfile -File source/deploy/node-installer/test-release-isolation.ps1
+          pwsh -NoProfile -File source/deploy/node-installer/test-node-runtime-upgrade-contract.ps1
 
       - name: Build deterministic Linux package
         shell: pwsh
@@ -146,36 +148,15 @@ jobs:
 
       - name: Archive and describe candidate
         shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           mkdir -p output/release
           SOURCE_DATE_EPOCH=0 bash source/deploy/node-installer/archive-node-package.sh \
             output/package output/release/tden-node-linux-amd64.tar.gz
           (cd output/release && sha256sum tden-node-linux-amd64.tar.gz > tden-node-linux-amd64.tar.gz.sha256)
-          python3 - <<'PY'
-          import json, os, pathlib, subprocess
-          root = pathlib.Path('output/release')
-          package = json.loads(pathlib.Path('output/package/package-metadata.json').read_text(encoding='utf-8'))
-          policy = json.loads(pathlib.Path('release-policy.json').read_text(encoding='utf-8'))
-          if package['bootstrap_trust_template_sha256'] != policy['bootstrap_trust_template_sha256']:
-              raise SystemExit('package bootstrap trust digest conflicts with release policy')
-          if package['tuf_root_sha256'] != policy['tuf_root_sha256']:
-              raise SystemExit('package TUF root digest conflicts with release policy')
-          data = {
-              'protocol': 'tden:node-candidate-build:v1',
-              'workflow_repository': os.environ['GITHUB_REPOSITORY'],
-              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
-              'chain_commit': subprocess.check_output(['git', '-C', 'source/tden-chain', 'rev-parse', 'HEAD'], text=True).strip(),
-              'gateway_commit': subprocess.check_output(['git', '-C', 'source/tden-gateway', 'rev-parse', 'HEAD'], text=True).strip(),
-              'deploy_commit': subprocess.check_output(['git', '-C', 'source/deploy', 'rev-parse', 'HEAD'], text=True).strip(),
-              'version': '${{ inputs.version }}',
-              'archive_sha256': subprocess.check_output(['sha256sum', root / 'tden-node-linux-amd64.tar.gz'], text=True).split()[0],
-              'archive_bytes': (root / 'tden-node-linux-amd64.tar.gz').stat().st_size,
-              'bootstrap_trust_template_sha256': package['bootstrap_trust_template_sha256'],
-              'tuf_root_sha256': package['tuf_root_sha256'],
-          }
-          (root / 'candidate-build.json').write_text(json.dumps(data, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
-          PY
+          python3 scripts/candidate_metadata.py create
 
       - name: Upload candidate without publishing a Release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -190,3 +171,8 @@ jobs:
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-path: output/release/tden-node-linux-amd64.tar.gz
+
+      - name: Attest candidate build description
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: output/release/candidate-build.json

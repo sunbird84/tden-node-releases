@@ -34,3 +34,19 @@ Configure required reviewers there to retain a separate human approval boundary.
 accepted by both candidate construction and promotion. Rotating either root is
 a separate reviewed policy and client/Console release, not an ordinary node
 package update.
+
+## Runtime Bundle Provenance
+
+New builds require `tden-node-runtime-upgrade` as a manifested, mode-0755 Linux amd64 ELF with clean Gateway Go/VCS metadata. The package metadata must bind `configuration_profile_sha256` to `configuration-profile.json`, copied byte-for-byte from `deploy/node-installer/configuration-profile.json`. It accepts exactly four fields: `protocol=tden:node-runtime-configuration-profile:v1`, `profile_id=public-node-runtime-rebase-v1`, `migration=preserve-state-and-rebase-runtime-v1`, and `role_artifacts`, a string-to-string object containing the exact nine role-to-binary mappings enforced by Gateway's `internal/nodecontrol/node_runtime_package.go`. Missing, extra or duplicate fields/roles and changed mappings are rejected. Final source commits remain pending; do not dispatch until approved. The deployment repository owns the helper build, archive executable allow-list, fixed profile and its semantic tests. The profile remains inside the original flat tar.gz, not a separate TUF target; the offline v2 manifest must also bind its digest.
+
+`candidate-build.json` keeps its v1 protocol and existing fields, adding `runtime_bundle`, the workflow commit/attempt and exact repository-to-commit mappings. `runtime_bundle` binds the original archive's `package.sha256`, `package-metadata.json`, configuration profile and helper. CI checks every archive member against the complete manifest without extracting or executing it.
+
+All nine profile-mapped binaries must exist in the archive and be covered by `package.sha256`. Runtime bundles also require the fixed regular member `node-runtime-files.py`, covered by the same manifest and thus the original archive/manifest digest bindings. Packaging tests check presence, uniqueness and checksums only; they do not execute this script or establish file-transaction, rollback or systemd acceptance. No profile or candidate-description schema field is added for this member.
+
+The existing single-subject archive attestation is unchanged. A **separate GitHub attestation** now covers `candidate-build.json`, cryptographically binding its archive digest and all Chain/Gateway/Deploy/release-workflow revisions. The default GitHub SLSA `resolvedDependencies` still describes the workflow repository, not all checked-out repositories; the separately attested description supplies those additional bindings. Promotion requires both verified subjects from the exact build run, attempt and workflow commit, and retains the verifier JSON as an Actions artifact. The three public release assets are unchanged.
+
+Legacy candidates without the new attestation step remain on the v1 component path. A new runtime build cannot omit its description or fall back to legacy provenance. These checks do not create SPDX, offline release/DAO signatures, TUF targets or deployment acceptance, and do not authorize stable promotion.
+
+Local regression checks: `python3 -B -m unittest discover -s scripts -p 'test_*.py' -v`. Receipt fixtures test binding rules only, not cryptographic verification. Actual GitHub verification requires the completed build and publish workflows.
+
+新包须包含可执行 helper、固定 profile 及完整清单绑定；原归档验签和旧 v1 组件通路保留。候选描述单独由 GitHub 验签，不代表离线 DAO 签名或整节点验收。最终接口和提交确认前不发起构建，不晋升 stable 或 TUF。
