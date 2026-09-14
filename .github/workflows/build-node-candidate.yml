@@ -121,6 +121,7 @@ jobs:
           (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
           sudo /tmp/tden-node-service-config.test -test.run '^TestReconcilePlanConsumesExactAuthorizationOnce$' -test.v
           bash -n source/deploy/node-installer/*.sh
+          sudo bash source/deploy/node-installer/test-public-supervisor-storage-access.sh
           python3 source/deploy/node-installer/test-public-endpoint.py AddressTests -v
           sudo python3 source/deploy/node-installer/test-caddy-handoff.py -v
           sudo python3 source/deploy/node-installer/test-lifecycle-history.py -v
