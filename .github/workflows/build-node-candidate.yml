@@ -119,10 +119,13 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_*.py' -v
           (cd source/tden-chain && go test ./...)
           (cd source/tden-gateway && go test ./...)
+          (cd source/tden-gateway && go test -c ./cmd/gateway -o /tmp/tden-gateway-receipts.test)
+          sudo env TDEN_TEST_RECEIPT_PERMISSIONS=1 /tmp/tden-gateway-receipts.test -test.run '^TestReleaseReceipt' -test.v
           (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
           sudo /tmp/tden-node-service-config.test -test.run '^TestReconcilePlanConsumesExactAuthorizationOnce$' -test.v
           bash -n source/deploy/node-installer/*.sh
           sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 source/deploy/node-installer/test-gateway-release-catalog.py
+          sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 -B source/deploy/node-installer/test-release-receipt-permissions.py -v
           sudo bash source/deploy/node-installer/test-public-supervisor-storage-access.sh
           python3 source/deploy/node-installer/test-public-endpoint.py AddressTests -v
           python3 -B source/deploy/node-installer/test-node-runtime-files.py -v
