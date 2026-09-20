@@ -1,0 +1,539 @@
+{
+  "app_name": "\u003cappd\u003e",
+  "app_version": "",
+  "genesis_time": "2026-09-20T09:59:06.884524174Z",
+  "chain_id": "tden-bond-20260920-r5",
+  "initial_height": 1,
+  "app_hash": null,
+  "app_state": {
+    "auth": {
+      "params": {
+        "max_memo_characters": "512",
+        "tx_sig_limit": "7",
+        "tx_size_cost_per_byte": "10",
+        "sig_verify_cost_ed25519": "590",
+        "sig_verify_cost_secp256k1": "1000"
+      },
+      "accounts": [
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "tden1cldv68xtpxny9gk9fqvm8m5mpl3kuwcw4gchyr",
+          "pub_key": null,
+          "account_number": "0",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "tden1p85ljv87wvk20qw73cz9fp5uldgtdlux6jmtjp",
+          "pub_key": null,
+          "account_number": "0",
+          "sequence": "0"
+        }
+      ]
+    },
+    "bank": {
+      "params": {
+        "send_enabled": [],
+        "default_send_enabled": true
+      },
+      "balances": [
+        {
+          "address": "tden1cldv68xtpxny9gk9fqvm8m5mpl3kuwcw4gchyr",
+          "coins": [
+            {
+              "denom": "utden",
+              "amount": "2000000000"
+            }
+          ]
+        }
+      ],
+      "supply": [
+        {
+          "denom": "utden",
+          "amount": "2000000000"
+        }
+      ],
+      "denom_metadata": [],
+      "send_enabled": []
+    },
+    "contentrights": {},
+    "contract": {
+      "contracts": [],
+      "events": []
+    },
+    "genutil": {
+      "gen_txs": [
+        {
+          "body": {
+            "messages": [
+              {
+                "@type": "/cosmos.staking.v1beta1.MsgCreateValidator",
+                "description": {
+                  "moniker": "tden-r5-public-a",
+                  "identity": "",
+                  "website": "",
+                  "security_contact": "",
+                  "details": ""
+                },
+                "commission": {
+                  "rate": "0.100000000000000000",
+                  "max_rate": "0.200000000000000000",
+                  "max_change_rate": "0.010000000000000000"
+                },
+                "min_self_delegation": "1",
+                "delegator_address": "",
+                "validator_address": "tdenvaloper1cldv68xtpxny9gk9fqvm8m5mpl3kuwcwxdnent",
+                "pubkey": {
+                  "@type": "/cosmos.crypto.ed25519.PubKey",
+                  "key": "9l26GlOXw8k04Js2pFUSLP5os6+Nc3CtIqFUEhWNAIQ="
+                },
+                "value": {
+                  "denom": "utden",
+                  "amount": "1000000000"
+                }
+              }
+            ],
+            "memo": "669f5047e26228466fe642993e3c71a350e6b406@tden-bond-r5.104-198-135-4.sslip.io:26656",
+            "timeout_height": "0",
+            "extension_options": [],
+            "non_critical_extension_options": []
+          },
+          "auth_info": {
+            "signer_infos": [
+              {
+                "public_key": {
+                  "@type": "/cosmos.crypto.secp256k1.PubKey",
+                  "key": "AtpVw2pRHZLeMbs+4LJw+N571INLTUGnkZgwJre5Qq2v"
+                },
+                "mode_info": {
+                  "single": {
+                    "mode": "SIGN_MODE_DIRECT"
+                  }
+                },
+                "sequence": "0"
+              }
+            ],
+            "fee": {
+              "amount": [],
+              "gas_limit": "200000",
+              "payer": "",
+              "granter": ""
+            },
+            "tip": null
+          },
+          "signatures": [
+            "ywVKRdzy5n/V3L8/8uhOwhS9Cqo4BpVTzRMvtZicsAImFXF7A11iE28ShGHLE1O4G/01i03+G8gLRQGNctoOYA=="
+          ]
+        }
+      ]
+    },
+    "gov": {
+      "starting_proposal_id": "1",
+      "deposits": [],
+      "votes": [],
+      "proposals": [],
+      "deposit_params": null,
+      "voting_params": null,
+      "tally_params": null,
+      "params": {
+        "min_deposit": [
+          {
+            "denom": "utden",
+            "amount": "10000000"
+          }
+        ],
+        "max_deposit_period": "172800s",
+        "voting_period": "120s",
+        "quorum": "0.334000000000000000",
+        "threshold": "0.500000000000000000",
+        "veto_threshold": "0.334000000000000000",
+        "min_initial_deposit_ratio": "0.000000000000000000",
+        "proposal_cancel_ratio": "0.500000000000000000",
+        "proposal_cancel_dest": "",
+        "expedited_voting_period": "60s",
+        "expedited_threshold": "0.667000000000000000",
+        "expedited_min_deposit": [
+          {
+            "denom": "utden",
+            "amount": "50000000"
+          }
+        ],
+        "burn_vote_quorum": false,
+        "burn_proposal_deposit_prevote": false,
+        "burn_vote_veto": true,
+        "min_deposit_ratio": "0.010000000000000000"
+      },
+      "constitution": ""
+    },
+    "identity": {
+      "identities": [],
+      "certifications": [],
+      "kyc_providers": [],
+      "legal_nodes": [],
+      "legal_attestations": [],
+      "node_operators": [
+        {
+          "operator_id": "operator.protocol-public",
+          "controller_ref": "protocol-public",
+          "owner_address": "",
+          "operator_type": "organization",
+          "display_name": "PUBLIC",
+          "management_pubkey_hex": "237839d23ac65c24816459c9887cd118fca38d84ddd93ebf16a5055307343fed",
+          "management_key_epoch": 1,
+          "settlement_address": "tden1cldv68xtpxny9gk9fqvm8m5mpl3kuwcw4gchyr",
+          "control_domain_code": "PUBLIC",
+          "control_domain_id": "domain.protocol-public",
+          "status": "active",
+          "registration_sequence": 1,
+          "registered_height": 1,
+          "updated_height": 1
+        }
+      ],
+      "managed_nodes": [
+        {
+          "node_id": "node-9153e17b6ca4fbd7448079d04e350f0dd25003d1b1c7ffdc",
+          "operator_id": "operator.protocol-public",
+          "roles": [
+            "chain_rpc",
+            "chain_sentry",
+            "encrypted_storage",
+            "gateway",
+            "identity_compute",
+            "map_service",
+            "node_relay",
+            "validator"
+          ],
+          "capabilities": [
+            "api_gateway",
+            "chain_read",
+            "ciphertext_store",
+            "consensus_validate",
+            "dynamic_service_lifecycle",
+            "identity_availability_observer",
+            "identity_mpc",
+            "identity_tee",
+            "lifecycle_authorization",
+            "map_tiles",
+            "node_status_relay",
+            "osm_raster_proxy",
+            "p2p_sentry",
+            "protocol_relay",
+            "storage_possession_proof",
+            "storage_repair"
+          ],
+          "service_pubkey_hex": "d2dc7a7b70a4c449df10836efde0453356487c58cecdf277b30e2e2fe46d2a1e",
+          "management_pubkey_hex": "237839d23ac65c24816459c9887cd118fca38d84ddd93ebf16a5055307343fed",
+          "workload_identity_pubkey_hex": "ab5622f82c57e4f2cd6a705b728fb22792cf7e31bc96091cba935ee32bb5ca42",
+          "attestation_pubkey_hex": "3f7698980551004795f5fe7d3b3912a909f4441fb63fd107860c8a73446a2146",
+          "encryption_pubkey_hex": "068580cf2dbd149c0c7ed526eb4fdf7d1f9b4022039078211a42d91dae0f9341",
+          "endpoints": [
+            "tcp://tden-bond-r5.104-198-135-4.sslip.io:26656",
+            "tls://tden-bond-r5.104-198-135-4.sslip.io:9443",
+            "https://tden-bond-r5.104-198-135-4.sslip.io:8443/v1/map",
+            "https://tden-bond-r5.104-198-135-4.sslip.io/.well-known/tden/nodes"
+          ],
+          "tls_cert_sha256": [
+            "ddfeaa8e97e521f1c4ce01905bdf4db700cd9921ade2a36143e33dfbdae7cc0e"
+          ],
+          "workload_certificate_authority_id": "ca.node-9153e17b6ca4fbd7448079d04e350f0dd25003d1b1c7ffdc",
+          "infrastructure_domain_id": "infra-f51927d3edbf8976194c73a0029c8365",
+          "network_mode": "direct_public",
+          "protocol_versions": [
+            "chain-rpc/v2",
+            "chain-sentry/v2",
+            "encrypted-storage/v2",
+            "gateway/v2",
+            "identity-compute/v2",
+            "map-service/v2",
+            "node-relay/v2",
+            "tden-node/v1",
+            "validator/v2"
+          ],
+          "lifecycle_authorization_pubkey_hex": "beb35ad37b4159dbd0b09b944de320904e2440479eda825f8b643dbf57a1b0b5",
+          "protocol_relay_address": "tden1p85ljv87wvk20qw73cz9fp5uldgtdlux6jmtjp",
+          "control_mode": "protocol_managed_public",
+          "public_handoff_stage": "public_bootstrap",
+          "reward_address": "tden1cldv68xtpxny9gk9fqvm8m5mpl3kuwcw4gchyr",
+          "public_policy_bundle_hash": "2d68f61fb1745a5c4fc4268912ed08c9593ad9384bef3ec1f8212c62211b9935",
+          "public_handoff_id": "b2480cecdb5cd1b76d82561970a2f0a2cafb4da1cb9bcba505d4b0d73c075088",
+          "public_handoff_height": 1,
+          "software_measurement": "2d68f61fb1745a5c4fc4268912ed08c9593ad9384bef3ec1f8212c62211b9935",
+          "policy_bundle_hash": "2d68f61fb1745a5c4fc4268912ed08c9593ad9384bef3ec1f8212c62211b9935",
+          "assurance": "BOOTSTRAP_SOFTWARE",
+          "status": "active",
+          "registration_sequence": 1,
+          "registered_height": 1,
+          "updated_height": 1
+        }
+      ],
+      "node_certificate_authorities": [
+        {
+          "authority_id": "ca.node-9153e17b6ca4fbd7448079d04e350f0dd25003d1b1c7ffdc",
+          "public_key_hex": "5c8381b0cdc2cc04db7abfec2e891a1e3235fcc375abb6d665f72f90d2481820",
+          "certificate_sha256": "92ebfc3f77d18edd95bab4e68efcc41f59afe8c8d2a5aa9f8e88c35d3b779aab",
+          "profiles": [
+            "workload"
+          ],
+          "max_lifetime_seconds": 600,
+          "status": "active",
+          "registration_sequence": 1,
+          "registered_height": 1,
+          "updated_height": 1
+        }
+      ],
+      "node_transfers": [],
+      "node_release_receipts": [],
+      "node_governance_policy": {
+        "protocol": "tden:node-governance:v3",
+        "max_open_proposals_per_domain": 3,
+        "min_proposal_interval_seconds": 1
+      },
+      "identity_compute_nodes": [],
+      "identity_compute_epochs": [],
+      "identity_availability_certificates": [],
+      "active_callsigns": [],
+      "retired_callsigns": []
+    },
+    "staking": {
+      "params": {
+        "unbonding_time": "1814400s",
+        "max_validators": 100,
+        "max_entries": 7,
+        "historical_entries": 10000,
+        "bond_denom": "utden",
+        "min_commission_rate": "0.000000000000000000"
+      },
+      "last_total_power": "0",
+      "last_validator_powers": [],
+      "validators": [],
+      "delegations": [],
+      "unbonding_delegations": [],
+      "redelegations": [],
+      "exported": false
+    },
+    "token": {
+      "accounts": [],
+      "txs": [],
+      "ledger_v2": {
+        "wallet_authorities": [],
+        "wallet_authorizations": [],
+        "payment_routes": [],
+        "state": {
+          "node_reward_protocol": "tden:node-rewards:v3",
+          "protocol": "tden:token-ledger:v2",
+          "denom": "ntden",
+          "decimals": 9,
+          "total_supply_minor": "100000000000000",
+          "treasury_balance_minor": "100000000000000",
+          "genesis_entitlement_commitment": "8c88f3c36f1dabe8ddd5308690bd1bc6256cd9f87b1eb04becd2da29cce0fd55",
+          "genesis_entitlement_claimed": false
+        },
+        "accounts": [],
+        "journals": [],
+        "service_escrows": [],
+        "service_bonds": [],
+        "contract_collaterals": [],
+        "service_market": {
+          "protocol": "tden:service-market:v2",
+          "offers": [],
+          "contracts": [],
+          "work_proofs": [],
+          "settlements": [],
+          "repairs": [],
+          "finalizations": [],
+          "annual_reward_caps": [],
+          "reward_budgets": [],
+          "reward_epochs": [],
+          "economic_policies": [
+            {
+              "policy_id": "policy.chain_rpc.bootstrap.v1",
+              "service_type": "chain_rpc",
+              "version": 1,
+              "pricing_unit": "verified_request",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "10000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 14,
+              "exposure_factor_bps": 10000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "39ababf7e8d0b9d5efc26045802917aa58e00bd2b967901e4ed7bd8253920f79",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.chain_sentry.bootstrap.v1",
+              "service_type": "chain_sentry",
+              "version": 1,
+              "pricing_unit": "availability_hour",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "25000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 30,
+              "exposure_factor_bps": 10000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "c5a17308bf3456c38908c10ab195a1036d5760bc0d77affb4b2fa43d9467cc9e",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.encrypted_storage.bootstrap.v1",
+              "service_type": "encrypted_storage",
+              "version": 1,
+              "pricing_unit": "gib_hour",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "100000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 60,
+              "exposure_factor_bps": 15000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "d12a67ebefc77181dde4ad9798a471f81d17897d3347407d38972bfd16b5b994",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.gateway.bootstrap.v1",
+              "service_type": "gateway",
+              "version": 1,
+              "pricing_unit": "verified_request",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "100000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 30,
+              "exposure_factor_bps": 10000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "317d11294905424a0395a36e4e44f7e7356468ebb8ef6b791acf17120c3ec162",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.general_compute.bootstrap.v1",
+              "service_type": "general_compute",
+              "version": 1,
+              "pricing_unit": "compute_unit",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "50000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 14,
+              "exposure_factor_bps": 12500,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "23e1a3d68ca38914400afa6233f6fd4e1a0a68dd1f8541d12e340622463434c6",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.identity_compute.bootstrap.v1",
+              "service_type": "identity_compute",
+              "version": 1,
+              "pricing_unit": "verified_task",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "500000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 180,
+              "exposure_factor_bps": 20000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "2afa3a1b950b0cb0fec4f9ea6650f4cc942ce4789ea546db133d11849435633c",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.kyc_provider.bootstrap.v1",
+              "service_type": "kyc_provider",
+              "version": 1,
+              "pricing_unit": "compliance_contract",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "500000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 180,
+              "exposure_factor_bps": 20000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "741f2e6558e0bfded3228a63e2f527d364e16d02ccd6605c0c4d2fece7f67755",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.map_service.bootstrap.v1",
+              "service_type": "map_service",
+              "version": 1,
+              "pricing_unit": "tile_gib",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "10000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 7,
+              "exposure_factor_bps": 10000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "22914714f59135623595319955ddcb35599ad30795dbbccbc1390397ea8ffb6c",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.node_relay.bootstrap.v1",
+              "service_type": "node_relay",
+              "version": 1,
+              "pricing_unit": "relay_gib",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "50000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 21,
+              "exposure_factor_bps": 10000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "953b83da65769402ce1bebbd19485a170530220b40ad9d13174d80a5ed44dff8",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            },
+            {
+              "policy_id": "policy.validator.bootstrap.v1",
+              "service_type": "validator",
+              "version": 1,
+              "pricing_unit": "consensus_epoch",
+              "system_price_minor_per_unit": "1",
+              "security_floor_minor": "1000000000000",
+              "median_daily_reward_minor": "0",
+              "risk_days": 90,
+              "exposure_factor_bps": 10000,
+              "points_version": "verified_units/v1",
+              "governance_proposal_hash": "0b627b9d150b91f945c96cd783255e8a190c5b5b927f5e2a9b64af332ff6c0dd",
+              "status": "active",
+              "created_at": 0,
+              "updated_at": 0
+            }
+          ],
+          "public_node_rewards": []
+        }
+      }
+    },
+    "upgrade": {}
+  },
+  "consensus": {
+    "params": {
+      "block": {
+        "max_bytes": "22020096",
+        "max_gas": "-1"
+      },
+      "evidence": {
+        "max_age_num_blocks": "100000",
+        "max_age_duration": "172800000000000",
+        "max_bytes": "1048576"
+      },
+      "validator": {
+        "pub_key_types": [
+          "ed25519"
+        ]
+      },
+      "version": {
+        "app": "0"
+      },
+      "abci": {
+        "vote_extensions_enable_height": "0"
+      }
+    }
+  }
+}

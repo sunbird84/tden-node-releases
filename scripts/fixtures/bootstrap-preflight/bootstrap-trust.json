@@ -1,0 +1,23 @@
+{
+  "protocol": "tden:node-bootstrap:v1",
+  "network_tier": "testnet",
+  "network_id": "tden-bond-20260920-r5",
+  "genesis_sha256": "821b716efc51ad0c96a1acf0709a7981692d579609ee0649b185db714d507518",
+  "tuf_root_sha256": "d6a728c2a922de2e6d2e5d22d1cefd112ad4b79bd5077ca0d58e5e930b714f01",
+  "signature_threshold": 2,
+  "minimum_infrastructure_domains": 1,
+  "keys": [
+    {
+      "key_id": "bootstrap-testnet-2026-08-r3-a",
+      "public_key_hex": "2c10321600e489583fcf6a1d9b9dcee6527d5245884d519568a99e15efa44793"
+    },
+    {
+      "key_id": "bootstrap-testnet-2026-08-r3-b",
+      "public_key_hex": "69bfbc447bd3acfd8f4cbe469e086c325a0fee12c0e8940e42274edf10c1b4b8"
+    },
+    {
+      "key_id": "bootstrap-testnet-2026-08-r3-c",
+      "public_key_hex": "7ade6fea6043e45ccfd6e909dd47be8b1221ccf81ae9de3029db15dd06b3cca8"
+    }
+  ]
+}

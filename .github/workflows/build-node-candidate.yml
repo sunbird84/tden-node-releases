@@ -159,6 +159,16 @@ jobs:
           (cd output/release && sha256sum tden-node-linux-amd64.tar.gz > tden-node-linux-amd64.tar.gz.sha256)
           python3 scripts/candidate_metadata.py create
 
+      - name: Verify archived bootstrap and original metadata
+        shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ inputs.version }}
+        run: |
+          python3 scripts/package_bootstrap_preflight.py \
+            --archive output/release/tden-node-linux-amd64.tar.gz \
+            --version "$CANDIDATE_VERSION" \
+            --materials scripts/fixtures/bootstrap-preflight
+
       - name: Upload candidate without publishing a Release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

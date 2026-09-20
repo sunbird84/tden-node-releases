@@ -1,0 +1,45 @@
+{
+  "protocol": "tden:node-bootstrap:v1",
+  "network_id": "tden-bond-20260920-r5",
+  "sequence": 1789898347,
+  "issued_at_unix": 1789898347,
+  "expires_at_unix": 1792403947,
+  "genesis_sha256": "821b716efc51ad0c96a1acf0709a7981692d579609ee0649b185db714d507518",
+  "tuf_root_sha256": "d6a728c2a922de2e6d2e5d22d1cefd112ad4b79bd5077ca0d58e5e930b714f01",
+  "registry": {
+    "grpc_endpoints": [],
+    "https_endpoints": [
+      "https://tden-bond-r5.104-198-135-4.sslip.io/.well-known/tden/nodes"
+    ]
+  },
+  "seeds": [
+    {
+      "node_id": "node-9153e17b6ca4fbd7448079d04e350f0dd25003d1b1c7ffdc",
+      "infrastructure_domain_id": "infra-f51927d3edbf8976194c73a0029c8365",
+      "transport": "cometbft-p2p",
+      "endpoint": "tcp://tden-bond-r5.104-198-135-4.sslip.io:26656",
+      "peer_id": "669f5047e26228466fe642993e3c71a350e6b406",
+      "service_pubkey_hex": "d2dc7a7b70a4c449df10836efde0453356487c58cecdf277b30e2e2fe46d2a1e",
+      "roles": [
+        "chain_rpc",
+        "chain_sentry",
+        "encrypted_storage",
+        "gateway",
+        "identity_compute",
+        "map_service",
+        "node_relay",
+        "validator"
+      ]
+    }
+  ],
+  "signatures": [
+    {
+      "key_id": "bootstrap-testnet-2026-08-r3-a",
+      "signature_hex": "96e582a0b38ebb2ecbcb092c4526de3f8d91fa0b3e1b249a8eb610b328a1c4eb80adf26345e86efcf275100d7746da18f624548dfeb41169c1c93a1c92aca608"
+    },
+    {
+      "key_id": "bootstrap-testnet-2026-08-r3-b",
+      "signature_hex": "2074e79196999a13fe950f302a9e580ddeab2c70337e8575e1efb1557b5f8c6f89a7a00f7117193763062e9e258116d5c4c3eeb6b3963e753123bd60c4b3780c"
+    }
+  ]
+}
