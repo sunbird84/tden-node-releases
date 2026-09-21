@@ -129,6 +129,7 @@ jobs:
           sudo bash source/deploy/node-installer/test-public-supervisor-storage-access.sh
           python3 source/deploy/node-installer/test-public-endpoint.py AddressTests -v
           python3 -B source/deploy/node-installer/test-node-runtime-files.py -v
+          sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 -B source/deploy/node-installer/test-node-runtime-files.py RuntimeScanSystemdTests -v
           sudo python3 source/deploy/node-installer/test-caddy-handoff.py -v
           sudo python3 source/deploy/node-installer/test-lifecycle-history.py -v
           pwsh -NoProfile -File source/deploy/node-installer/test-install-state-root.ps1
