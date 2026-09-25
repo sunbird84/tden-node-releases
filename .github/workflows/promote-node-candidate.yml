@@ -196,41 +196,33 @@ jobs:
               )
           pathlib.Path('release-notes.txt').write_text(body, encoding='utf-8')
           PY
-          # Resume only an unfinished preview with the same immutable digest tag.
-          # 只允许续传同一摘要标签的预览草稿，已发布版本不能覆盖。
+          # Published previews keep their original assets; only verified metadata is promoted.
+          # 已发布预览版保留原附件；验签与摘要复核通过后仅晋升发布元数据。
+          release_action=create
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --json isDraft,isPrerelease > existing-release.json 2>/dev/null; then
-            [[ "$RELEASE_CHANNEL" == preview ]]
-            python3 - <<'PY'
-          import json
-          release = json.load(open('existing-release.json', encoding='utf-8'))
-          if release.get('isDraft') is not True or release.get('isPrerelease') is not True:
-              raise SystemExit('only an unpublished preview may be resumed')
+            release_action="$(python3 - <<'PY'
+          import os
+          from scripts.candidate_metadata import existing_release_action, read_json
+          print(existing_release_action(os.environ['RELEASE_CHANNEL'], read_json('existing-release.json')))
           PY
+          )"
           else
             flags=(--draft --latest=false)
             if [[ "$RELEASE_CHANNEL" == preview ]]; then flags+=(--prerelease); fi
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --title "$RELEASE_TAG" --notes-file release-notes.txt "${flags[@]}"
           fi
-          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            candidate/tden-node-linux-amd64.tar.gz \
-            candidate/tden-node-linux-amd64.tar.gz.sha256 \
-            candidate/candidate-build.json
+          if [[ "$release_action" != promote_preview ]]; then
+            gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+              candidate/tden-node-linux-amd64.tar.gz \
+              candidate/tden-node-linux-amd64.tar.gz.sha256 \
+              candidate/candidate-build.json
+          fi
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets > uploaded-assets.json
           python3 - <<'PY'
-          import hashlib, json, pathlib
-          assets = json.load(open('uploaded-assets.json', encoding='utf-8'))['assets']
-          files = {path.name: path for path in pathlib.Path('candidate').iterdir()}
-          if len(assets) != len(files) or {asset['name'] for asset in assets} != set(files):
-              raise SystemExit('uploaded asset set mismatch')
-          for asset in assets:
-              path = files[asset['name']]
-              with path.open('rb') as source:
-                  digest = hashlib.file_digest(source, 'sha256').hexdigest()
-              if (asset.get('state') != 'uploaded' or asset.get('size') != path.stat().st_size
-                      or asset.get('digest') != 'sha256:' + digest):
-                  raise SystemExit('uploaded asset digest/size/state mismatch')
+          from scripts.candidate_metadata import read_json, verify_release_assets
+          verify_release_assets(read_json('uploaded-assets.json')['assets'], 'candidate')
           PY
           if [[ "$RELEASE_CHANNEL" == preview ]]; then
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \

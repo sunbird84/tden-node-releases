@@ -50,6 +50,36 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def existing_release_action(channel, release):
+    require(channel in ("preview", "stable"), "invalid release channel")
+    require(isinstance(release, dict), "invalid release metadata")
+    draft, preview = release.get("isDraft"), release.get("isPrerelease")
+    require(type(draft) is bool and type(preview) is bool, "invalid release state")
+    if draft and preview and channel == "preview":
+        return "resume_preview"
+    if not draft and preview and channel == "stable":
+        return "promote_preview"
+    raise ValueError("existing release cannot be replaced or downgraded")
+
+
+def verify_release_assets(assets, directory):
+    # Promotion changes metadata only after every existing asset matches the attested candidate.
+    # 晋升前逐项匹配已证明来源的原附件；晋升本身只修改发布元数据。
+    files = {path.name: path for path in Path(directory).iterdir()}
+    require(set(files) == {ARCHIVE, ARCHIVE + ".sha256", "candidate-build.json"},
+            "candidate asset set mismatch")
+    require(isinstance(assets, list) and len(assets) == len(files)
+            and all(isinstance(asset, dict) for asset in assets)
+            and {asset.get("name") for asset in assets} == set(files),
+            "uploaded asset set mismatch")
+    for asset in assets:
+        path = files[asset["name"]]
+        require(path.is_file() and asset.get("state") == "uploaded"
+                and asset.get("size") == path.stat().st_size
+                and asset.get("digest") == "sha256:" + file_sha(path),
+                "uploaded asset digest/size/state mismatch")
+
+
 def unique_object(pairs):
     result = {}
     for key, value in pairs:

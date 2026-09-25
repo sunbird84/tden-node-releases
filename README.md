@@ -27,6 +27,12 @@ the same digest tag can be resumed; published releases are never overwritten.
 Stable publication still uses the `stable-node-release` GitHub environment.
 Configure required reviewers there to retain a separate human approval boundary.
 
+A published preview can be promoted to stable through this same workflow. It
+rechecks provenance and all three existing asset digests against the original
+candidate, skips asset upload, and changes only release metadata. Existing stable
+releases cannot be replaced or downgraded. 已发布的预览版可在原附件逐项复核后晋升为
+稳定版，只修改发布元数据，不覆盖附件；已有稳定版不能替换或降级。
+
 预览版仅用于受控安装测试，不能代替稳定版验收，也不会更新 TUF 授权或链上 DAO 策略。
 工作流直接在 GitHub 内下载候选包并发布原包，不经过运营者电脑或节点中转。
 
