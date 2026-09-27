@@ -62,6 +62,23 @@ def existing_release_action(channel, release):
     raise ValueError("existing release cannot be replaced or downgraded")
 
 
+def verify_stable_version_unique(pages, version_slug, release_tag):
+    require(isinstance(version_slug, str) and re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", version_slug),
+            "invalid stable version slug")
+    prefix = f"node-{version_slug}-run-"
+    require(isinstance(release_tag, str) and re.fullmatch(re.escape(prefix) + r"[1-9][0-9]*-[0-9a-f]{64}", release_tag),
+            "stable release tag does not match candidate version")
+    require(isinstance(pages, list) and all(isinstance(page, list) for page in pages),
+            "release listing invalid")
+    for page in pages:
+        for release in page:
+            require(isinstance(release, dict) and isinstance(release.get("tag_name"), str),
+                    "release listing entry invalid")
+            tag = release["tag_name"]
+            require(not tag.startswith(prefix) or tag == release_tag,
+                    "another candidate already uses this node release version")
+
+
 def verify_release_assets(assets, directory):
     # Promotion changes metadata only after every existing asset matches the attested candidate.
     # 晋升前逐项匹配已证明来源的原附件；晋升本身只修改发布元数据。

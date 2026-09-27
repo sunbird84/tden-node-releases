@@ -4,10 +4,22 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from candidate_metadata import ARCHIVE, existing_release_action, verify_release_assets
+from candidate_metadata import ARCHIVE, existing_release_action, verify_release_assets, verify_stable_version_unique
 
 
 class ReleasePromotionTests(unittest.TestCase):
+    def test_stable_rejects_other_candidate_with_same_version(self):
+        tag = "node-0-12-49-run-123-" + "a" * 64
+        other = "node-0-12-49-run-456-" + "b" * 64
+        verify_stable_version_unique([[], [{"tag_name": tag}]], "0-12-49", tag)
+        verify_stable_version_unique([], "0-12-49", tag)
+        with self.assertRaisesRegex(ValueError, "already uses"):
+            verify_stable_version_unique([[{"tag_name": other}]], "0-12-49", tag)
+        verify_stable_version_unique([[{"tag_name": "node-0-12-50-run-456-" + "b" * 64}]], "0-12-49", tag)
+        for bad in ([{"tag_name": other}], [[{}]]):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                verify_stable_version_unique(bad, "0-12-49", tag)
+
     def test_only_two_existing_release_transitions_are_allowed(self):
         for channel in ("preview", "stable"):
             for draft in (False, True):

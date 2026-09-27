@@ -19,6 +19,10 @@ on:
         description: Exact candidate archive SHA-256; stable requires completed acceptance
         required: true
         type: string
+      acceptance_run_id:
+        description: Trusted deployment acceptance workflow run ID; required only for stable
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -39,6 +43,7 @@ jobs:
       CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
       EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
       RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      ACCEPTANCE_RUN_ID: ${{ inputs.acceptance_run_id }}
     steps:
       - name: Check out release repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -135,6 +140,7 @@ jobs:
           release_tag="node-${version_slug}-run-${CANDIDATE_RUN_ID}-${actual_sha256}"
           printf 'archive_sha256=%s\n' "$actual_sha256" >> "$GITHUB_OUTPUT"
           printf 'archive_bytes=%s\n' "$archive_bytes" >> "$GITHUB_OUTPUT"
+          printf 'version_slug=%s\n' "$version_slug" >> "$GITHUB_OUTPUT"
           printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
 
       - name: Retain provenance verification records
@@ -151,12 +157,37 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Require trusted deployment acceptance for stable
+        if: inputs.release_channel == 'stable'
+        id: acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/acceptance_gate.py --acceptance-run-id "$ACCEPTANCE_RUN_ID"
+
+      - name: Reject stable version ambiguity
+        if: inputs.release_channel == 'stable'
+        shell: bash
+        env:
+          VERSION_SLUG: ${{ steps.describe.outputs.version_slug }}
+          RELEASE_TAG: ${{ steps.describe.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > release-pages.json
+          python3 - <<'PY'
+          import os
+          from scripts.candidate_metadata import read_json, verify_stable_version_unique
+          verify_stable_version_unique(read_json('release-pages.json'), os.environ['VERSION_SLUG'], os.environ['RELEASE_TAG'])
+          PY
+
       - name: Publish the exact archive without rebuilding
         shell: bash
         env:
           ARCHIVE_SHA256: ${{ steps.describe.outputs.archive_sha256 }}
           ARCHIVE_BYTES: ${{ steps.describe.outputs.archive_bytes }}
           RELEASE_TAG: ${{ steps.describe.outputs.release_tag }}
+          ACCEPTANCE_VERIFIED_RUN_ID: ${{ steps.acceptance.outputs.run_id }}
+          ACCEPTANCE_MANIFEST_SHA256: ${{ steps.acceptance.outputs.manifest_sha256 }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -173,8 +204,14 @@ jobs:
               f"Bootstrap trust template SHA-256: {build['bootstrap_trust_template_sha256']}\n"
               f"TUF root SHA-256: {build['tuf_root_sha256']}\n"
               "\nPublication verified the official build origin and the exact archive digest. "
-              "The archive was not rebuilt. Deployment acceptance results are recorded separately.\n"
+              "The archive was not rebuilt.\n"
           )
+          if os.environ['RELEASE_CHANNEL'] == 'stable':
+              body += (
+                  f"Trusted deployment acceptance run: {os.environ['ACCEPTANCE_VERIFIED_RUN_ID']}\n"
+                  f"Attested acceptance manifest SHA-256: {os.environ['ACCEPTANCE_MANIFEST_SHA256']}\n"
+                  "This is not TUF or DAO authorization.\n"
+              )
           if os.environ['RELEASE_CHANNEL'] == 'preview':
               body += (
                   "\nFor controlled installation testing only; full deployment acceptance is incomplete. "

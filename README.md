@@ -14,10 +14,11 @@ or node.
 1. Run `Build TDEN node candidate` with exact Chain, Gateway, and Deploy commits.
 2. Download that workflow artifact directly on the validation nodes.
 3. Complete clean install, join, synchronization, restart, interruption, TLS,
-   SSH-hardening, and public-lockdown acceptance.
+   SSH-hardening, public-lockdown and upgrade acceptance using the same archive.
 4. Run `Publish TDEN node candidate` with the candidate run ID, archive SHA-256
-   and release channel. The default `preview` channel is not a stable promotion.
-   Select `stable` only after all required deployment acceptance is complete.
+   and release channel. The default `preview` channel remains available for
+   controlled testing. `stable` additionally requires a trusted acceptance run
+   ID and the machine gate described in [ACCEPTANCE_GATE.md](ACCEPTANCE_GATE.md).
 
 The promotion workflow verifies the successful build workflow, artifact file
 set, archive digest, size, source revisions, and candidate description before
@@ -26,12 +27,16 @@ attestations and the uploaded asset digests. An interrupted preview draft with
 the same digest tag can be resumed; published releases are never overwritten.
 Stable publication still uses the `stable-node-release` GitHub environment.
 Configure required reviewers there to retain a separate human approval boundary.
+The deployment acceptance source is currently **not configured**. Stable
+publication fails closed before creating or editing any release; an operator's
+PASS JSON or environment approval does not unblock it.
 
-A published preview can be promoted to stable through this same workflow. It
-rechecks provenance and all three existing asset digests against the original
-candidate, skips asset upload, and changes only release metadata. Existing stable
-releases cannot be replaced or downgraded. 已发布的预览版可在原附件逐项复核后晋升为
-稳定版，只修改发布元数据，不覆盖附件；已有稳定版不能替换或降级。
+A published preview can be promoted to stable through this same workflow only
+after the acceptance gate passes. It rechecks provenance and all three existing
+asset digests against the original candidate, skips asset upload, and changes
+only release metadata. Existing stable releases cannot be replaced or downgraded.
+已发布的预览版须通过可信验收门禁并逐项复核原附件后才能晋升为稳定版；晋升只修改发布元数据，
+不覆盖附件；已有稳定版不能替换或降级。
 
 预览版仅用于受控安装测试，不能代替稳定版验收，也不会更新 TUF 授权或链上 DAO 策略。
 工作流直接在 GitHub 内下载候选包并发布原包，不经过运营者电脑或节点中转。
