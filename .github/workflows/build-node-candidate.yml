@@ -119,6 +119,7 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_*.py' -v
           (cd source/tden-chain && go test ./...)
           (cd source/tden-gateway && go test ./...)
+          go run scripts/check-public-policy-contract.go -- source/tden-gateway/internal/nodesecurity/policy.go source/deploy/node-installer/install.sh
           (cd source/tden-gateway && go test -c ./cmd/gateway -o /tmp/tden-gateway-receipts.test)
           sudo env TDEN_TEST_RECEIPT_PERMISSIONS=1 /tmp/tden-gateway-receipts.test -test.run '^TestReleaseReceipt' -test.v
           (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
