@@ -16,11 +16,18 @@ class CandidateSourceLockTests(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.data = self.fixture.description()
+        # CI checks out dependencies inside source; local repositories are siblings.
+        # CI 的依赖位于 source 下；本地依赖仓库与发布仓库并列。
+        repository = Path(__file__).resolve().parents[1]
+        deploy_sources = (repository / "source/deploy", repository.parent / "deploy")
+        deploy_source = next((source for source in deploy_sources
+                              if (source / "node-installer/assert-release-isolation.ps1").is_file()),
+                             deploy_sources[0])
         self.args = SimpleNamespace(
             **{key: self.data[key] for key in (*candidate.REPOSITORIES, "workflow_commit", "version", "archive_sha256")},
             run_id=self.fixture.run["id"], run_attempt=self.fixture.run["run_attempt"],
             directory=self.fixture.root, repository=self.fixture.repo,
-            deploy_source=Path(__file__).resolve().parents[2] / "deploy",
+            deploy_source=deploy_source,
         )
         for field, filename, data in (
             ("run", "run.json", self.fixture.run),
