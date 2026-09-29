@@ -123,7 +123,7 @@ jobs:
           (cd source/tden-gateway && go test -c ./cmd/gateway -o /tmp/tden-gateway-receipts.test)
           sudo env TDEN_TEST_RECEIPT_PERMISSIONS=1 /tmp/tden-gateway-receipts.test -test.run '^TestReleaseReceipt' -test.v
           (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
-          sudo /tmp/tden-node-service-config.test -test.run '^TestReconcilePlanConsumesExactAuthorizationOnce$' -test.v
+          sudo /tmp/tden-node-service-config.test -test.run '^(TestReconcilePlanConsumesExactAuthorizationOnce|TestHandoffPermissionRetryDoesNotAdvanceGeneration)$' -test.v
           (cd source/tden-gateway && go test -c ./cmd/node-public-handoff -o /tmp/tden-node-public-handoff.test)
           sudo /tmp/tden-node-public-handoff.test -test.run '^TestServiceMigrationHelperRequiresExactImmutablePolicyBinding$' -test.v
           bash -n source/deploy/node-installer/*.sh
