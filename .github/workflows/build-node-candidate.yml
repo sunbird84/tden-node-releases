@@ -124,6 +124,8 @@ jobs:
           sudo env TDEN_TEST_RECEIPT_PERMISSIONS=1 /tmp/tden-gateway-receipts.test -test.run '^TestReleaseReceipt' -test.v
           (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
           sudo /tmp/tden-node-service-config.test -test.run '^TestReconcilePlanConsumesExactAuthorizationOnce$' -test.v
+          (cd source/tden-gateway && go test -c ./cmd/node-public-handoff -o /tmp/tden-node-public-handoff.test)
+          sudo /tmp/tden-node-public-handoff.test -test.run '^TestServiceMigrationHelperRequiresExactImmutablePolicyBinding$' -test.v
           bash -n source/deploy/node-installer/*.sh
           sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 source/deploy/node-installer/test-gateway-release-catalog.py
           sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 -B source/deploy/node-installer/test-release-receipt-permissions.py -v
