@@ -305,13 +305,13 @@ def create(args):
     print(json.dumps(data, sort_keys=True))
 
 
-def verify(args):
+def verify(args, *, repository=None, expected_sha256=None):
     root = Path(args.directory)
     data, run = read_json(root / "candidate-build.json"), read_json(args.run)
     runtime_required = needs_runtime(read_json(args.jobs))
     digest, size = file_sha(root / ARCHIVE), (root / ARCHIVE).stat().st_size
-    require(digest == os.environ["EXPECTED_SHA256"], "archive differs from approved digest")
-    validate_description(data, run, os.environ["GITHUB_REPOSITORY"], digest, size, runtime_required)
+    require(digest == (expected_sha256 if expected_sha256 is not None else os.environ["EXPECTED_SHA256"]), "archive differs from approved digest")
+    validate_description(data, run, repository if repository is not None else os.environ["GITHUB_REPOSITORY"], digest, size, runtime_required)
     policy = read_json(args.policy)
     for key in ROOT_FILES:
         require(data.get(key) == policy[key], f"candidate trust mismatch: {key}")

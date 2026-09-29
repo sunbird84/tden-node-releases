@@ -1,0 +1,3 @@
+# Local Python caches and verification logs / 本地 Python 缓存与验证日志
+__pycache__/
+scripts/test-logs/
