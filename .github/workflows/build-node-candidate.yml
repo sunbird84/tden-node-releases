@@ -1,222 +1,73 @@
-name: Build TDEN node candidate
+name: Bounded gateway rejection diagnostic
 
 on:
   workflow_dispatch:
     inputs:
-      chain_ref:
-        description: Exact tden-chain commit or tag
-        required: true
-        type: string
       gateway_ref:
-        description: Exact tden-gateway commit or tag
+        description: Exact private diagnostic commit
         required: true
-        type: string
-      deploy_ref:
-        description: Exact tden-deploy commit or tag
-        required: true
-        type: string
-      version:
-        description: Semantic package version
-        required: true
-        default: 0.12.0
         type: string
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
-
-concurrency:
-  group: node-candidate-${{ inputs.chain_ref }}-${{ inputs.gateway_ref }}-${{ inputs.deploy_ref }}
-  cancel-in-progress: false
 
 jobs:
-  build:
+  diagnose:
+    if: github.repository == 'sunbird84/tden-node-releases' && github.ref == 'refs/heads/codex/gateway-diagnostic-20261108-260'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 20
+    env:
+      GOFLAGS: -mod=readonly
     steps:
-      - name: Check out release repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-
-      - name: Check out Chain source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Check out exact private Chain dependency
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: sunbird84/tden-chain
-          ref: ${{ inputs.chain_ref }}
+          ref: 4e5b548a97b2ddc72e8e7fa2211604be4a56a2b6
           path: source/tden-chain
           ssh-key: ${{ secrets.TDEN_CHAIN_SOURCE_DEPLOY_KEY }}
           persist-credentials: false
-
-      - name: Check out Gateway source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Check out exact private Gateway diagnostic
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: sunbird84/tden-gateway
           ref: ${{ inputs.gateway_ref }}
           path: source/tden-gateway
           ssh-key: ${{ secrets.TDEN_GATEWAY_SOURCE_DEPLOY_KEY }}
           persist-credentials: false
-
-      - name: Check out deployment source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          repository: sunbird84/tden-deploy
-          ref: ${{ inputs.deploy_ref }}
-          path: source/deploy
-          ssh-key: ${{ secrets.TDEN_DEPLOY_SOURCE_DEPLOY_KEY }}
-          persist-credentials: false
-
-      - name: Install Go toolchain
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - name: Guard exact clean inputs
+        env:
+          EXPECTED_GATEWAY: ${{ inputs.gateway_ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_GATEWAY" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git -C source/tden-chain rev-parse HEAD)" == 4e5b548a97b2ddc72e8e7fa2211604be4a56a2b6 ]]
+          [[ "$(git -C source/tden-gateway rev-parse HEAD)" == "$EXPECTED_GATEWAY" ]]
+          test -z "$(git -C source/tden-chain status --porcelain=v1)"
+          test -z "$(git -C source/tden-gateway status --porcelain=v1)"
+      - name: Install the same exact Go toolchain
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version: 1.26.7
           cache-dependency-path: |
             source/tden-chain/go.sum
             source/tden-gateway/go.sum
-
-      - name: Verify source revisions are exact and clean
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $expected = @{
-            'source/tden-chain' = '${{ inputs.chain_ref }}'
-            'source/tden-gateway' = '${{ inputs.gateway_ref }}'
-            'source/deploy' = '${{ inputs.deploy_ref }}'
-          }
-          foreach ($entry in $expected.GetEnumerator()) {
-            $head = (git -C $entry.Key rev-parse HEAD).Trim()
-            $resolved = (git -C $entry.Key rev-parse "$($entry.Value)^{commit}").Trim()
-            if ($head -cne $resolved) { throw "source revision mismatch: $($entry.Key)" }
-            if (git -C $entry.Key status --porcelain=v1) { throw "dirty source checkout: $($entry.Key)" }
-          }
-
-      - name: Verify fixed release trust policy
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib, json, pathlib, re
-          policy = json.loads(pathlib.Path('release-policy.json').read_text(encoding='utf-8'))
-          if set(policy) != {'protocol', 'bootstrap_trust_template_sha256', 'tuf_root_sha256'}:
-              raise SystemExit('release policy fields are invalid')
-          if policy['protocol'] != 'tden:node-release-policy:v1':
-              raise SystemExit('release policy protocol is invalid')
-          files = {
-              'bootstrap_trust_template_sha256': pathlib.Path('source/deploy/node-installer/trust/bootstrap-trust-template.production.json'),
-              'tuf_root_sha256': pathlib.Path('source/deploy/node-installer/trust/tuf-root.production.json'),
-          }
-          for key, path in files.items():
-              value = policy.get(key, '')
-              if not re.fullmatch(r'[0-9a-f]{64}', value):
-                  raise SystemExit(f'{key} is invalid')
-              if hashlib.sha256(path.read_bytes()).hexdigest() != value:
-                  raise SystemExit(f'{path} conflicts with release-policy.json')
-          PY
-
-      - name: Materialize reviewed synthetic shared vectors from private source
-        shell: bash
-        run: |
-          set -euo pipefail
-          test ! -e source/tden-spec
-          test ! -L source/tden-spec
-          for rel in \
-            test-vectors/registration-operation-read-v1.json \
-            test-vectors/authenticated-enrollment-v1.json \
-            spec/testdata/token-payment-review-v1.json \
-            vectors/presence-device-proof-v1.json; do
-            src="source/tden-chain/testdata/shared-spec/$rel"
-            dst="source/tden-spec/$rel"
-            test -f "$src"
-            test ! -L "$src"
-            install -D -m 0644 -- "$src" "$dst"
-            cmp -- "$src" "$dst"
-          done
-
-      - name: Run source tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m unittest discover -s scripts -p 'test_*.py' -v
-          (cd source/tden-chain && go test ./...)
-          (cd source/tden-gateway && go test ./...)
-          go run scripts/check-public-policy-contract.go -- source/tden-gateway/internal/nodesecurity/policy.go source/deploy/node-installer/install.sh
-          (cd source/tden-gateway && go test -c ./cmd/gateway -o /tmp/tden-gateway-receipts.test)
-          sudo env TDEN_TEST_RECEIPT_PERMISSIONS=1 /tmp/tden-gateway-receipts.test -test.run '^TestReleaseReceipt' -test.v
-          (cd source/tden-gateway && go test -c ./cmd/node-service-config -o /tmp/tden-node-service-config.test)
-          sudo /tmp/tden-node-service-config.test -test.run '^(TestReconcilePlanConsumesExactAuthorizationOnce|TestHandoffPermissionRetryDoesNotAdvanceGeneration)$' -test.v
-          (cd source/tden-gateway && go test -c ./cmd/node-public-handoff -o /tmp/tden-node-public-handoff.test)
-          sudo /tmp/tden-node-public-handoff.test -test.run '^TestServiceMigrationHelperRequiresExactImmutablePolicyBinding$' -test.v
-          for script in source/deploy/node-installer/*.sh; do
-            bash -n "$script"
-          done
-          sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 source/deploy/node-installer/test-gateway-release-catalog.py
-          sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 -B source/deploy/node-installer/test-release-receipt-permissions.py -v
-          sudo bash source/deploy/node-installer/test-public-supervisor-storage-access.sh
-          python3 source/deploy/node-installer/test-public-endpoint.py AddressTests -v
-          python3 -B source/deploy/node-installer/test-resolve-public-ca-route.py -v
-          python3 -B source/deploy/node-installer/test-public-supervisor-preflight.py -v
-          python3 -B source/deploy/node-installer/test-node-runtime-files.py -v
-          python3 -B source/deploy/node-installer/test-install-quiescence.py -v
-          python3 -B source/deploy/node-installer/test-archive-node-package.py -v
-          sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 -B source/deploy/node-installer/test-node-runtime-files.py RuntimeScanSystemdTests -v
-          sudo python3 source/deploy/node-installer/test-caddy-handoff.py -v
-          sudo python3 source/deploy/node-installer/test-lifecycle-history.py -v
-          pwsh -NoProfile -File source/deploy/node-installer/test-install-state-root.ps1
-          pwsh -NoProfile -File source/deploy/node-installer/test-release-isolation.ps1
-          pwsh -NoProfile -File source/deploy/node-installer/test-node-runtime-upgrade-contract.ps1
-
-      - name: Build deterministic Linux package
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Path output/package -Force | Out-Null
-          & source/deploy/node-installer/build-node-package.ps1 `
-            -OutputDirectory output/package `
-            -BootstrapTrustTemplate source/deploy/node-installer/trust/bootstrap-trust-template.production.json `
-            -TufRoot source/deploy/node-installer/trust/tuf-root.production.json `
-            -ReleaseTrustTemplate source/deploy/node-installer/trust/release-trust-template.production.json `
-            -ApprovalAttestationAllowlist source/deploy/node-installer/trust/approval-attestations.fail-closed.txt `
-            -LifecycleGatewayTrust source/deploy/node-installer/trust/lifecycle-gateway-trust.production.json `
-            -Profile public `
-            -Architecture amd64 `
-            -Version '${{ inputs.version }}'
-
-      - name: Archive and describe candidate
-        shell: bash
+      - name: Identify reward rejection without transaction dumps
+        id: reward
+        continue-on-error: true
+        working-directory: source/tden-gateway
+        run: go test ./internal/cosmos -run '^(TestRewardStorageConfirmationV1OriginalFirstAndFreshReservation|TestRewardStorageOriginalTxV1DurableBeforeSendAndOriginalOnlyRecovery)$' -count=1
+      - name: Test isolated public-release store fixture
+        id: handler
+        continue-on-error: true
+        working-directory: source/tden-gateway
+        run: go test ./internal/handlers -run '^TestPublicReleaseRequestSecretUIDAndReplayBoundaries$' -count=1
+      - name: Preserve actual diagnostic outcomes
+        if: always()
         env:
-          CANDIDATE_VERSION: ${{ inputs.version }}
+          REWARD_OUTCOME: ${{ steps.reward.outcome }}
+          HANDLER_OUTCOME: ${{ steps.handler.outcome }}
         run: |
           set -euo pipefail
-          mkdir -p output/release
-          SOURCE_DATE_EPOCH=0 bash source/deploy/node-installer/archive-node-package.sh \
-            output/package output/release/tden-node-linux-amd64.tar.gz
-          (cd output/release && sha256sum tden-node-linux-amd64.tar.gz > tden-node-linux-amd64.tar.gz.sha256)
-          python3 scripts/candidate_metadata.py create
-
-      - name: Verify archived bootstrap and original metadata
-        shell: bash
-        env:
-          CANDIDATE_VERSION: ${{ inputs.version }}
-        run: |
-          python3 scripts/package_bootstrap_preflight.py \
-            --archive output/release/tden-node-linux-amd64.tar.gz \
-            --version "$CANDIDATE_VERSION" \
-            --materials scripts/fixtures/bootstrap-preflight
-
-      - name: Upload candidate without publishing a Release
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: tden-node-candidate-${{ github.run_id }}
-          path: output/release/
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-
-      - name: Attest candidate archive
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
-        with:
-          subject-path: output/release/tden-node-linux-amd64.tar.gz
-
-      - name: Attest candidate build description
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
-        with:
-          subject-path: output/release/candidate-build.json
+          printf 'Reward diagnostic: %s; handler fixture: %s\n' "$REWARD_OUTCOME" "$HANDLER_OUTCOME"
+          [[ "$REWARD_OUTCOME" == success && "$HANDLER_OUTCOME" == success ]]
