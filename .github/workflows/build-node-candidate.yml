@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   diagnose:
-    if: github.repository == 'sunbird84/tden-node-releases' && github.ref == 'refs/heads/codex/gateway-diagnostic-20261108-260'
+    if: github.repository == 'sunbird84/tden-node-releases' && github.ref == 'refs/heads/codex/gateway-suite-20261108-260'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -56,12 +56,12 @@ jobs:
         id: reward
         continue-on-error: true
         working-directory: source/tden-gateway
-        run: go test ./internal/cosmos -run '^(TestRewardStorageConfirmationV1OriginalFirstAndFreshReservation|TestRewardStorageOriginalTxV1DurableBeforeSendAndOriginalOnlyRecovery)$' -count=1
+        run: go test ./internal/cosmos -count=1
       - name: Test isolated public-release store fixture
         id: handler
         continue-on-error: true
         working-directory: source/tden-gateway
-        run: go test ./internal/handlers -run '^TestPublicReleaseRequestSecretUIDAndReplayBoundaries$' -count=1
+        run: go test ./internal/handlers -count=1
       - name: Preserve actual diagnostic outcomes
         if: always()
         env:
