@@ -38,6 +38,10 @@ jobs:
       - name: Check out release repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
+      - name: Reject expired public bootstrap fixture before build
+        shell: bash
+        run: python3 -B scripts/check_bootstrap_fixture_dates.py --manifest scripts/fixtures/bootstrap-preflight/bootstrap-manifest.json
+
       - name: Check out Chain source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
