@@ -131,6 +131,13 @@ jobs:
             cmp -- "$src" "$dst"
           done
 
+      - name: Acquire pinned Kubo from the exact official asset
+        id: kubo
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/prefetch_kubo.py
+
       - name: Run source tests
         shell: bash
         run: |
@@ -166,6 +173,8 @@ jobs:
 
       - name: Build deterministic Linux package
         shell: pwsh
+        env:
+          TDEN_KUBO_ARCHIVE: ${{ steps.kubo.outputs.archive }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path output/package -Force | Out-Null
@@ -176,6 +185,7 @@ jobs:
             -ReleaseTrustTemplate source/deploy/node-installer/trust/release-trust-template.production.json `
             -ApprovalAttestationAllowlist source/deploy/node-installer/trust/approval-attestations.fail-closed.txt `
             -LifecycleGatewayTrust source/deploy/node-installer/trust/lifecycle-gateway-trust.production.json `
+            -KuboArchive $env:TDEN_KUBO_ARCHIVE `
             -Profile public `
             -Architecture amd64 `
             -Version '${{ inputs.version }}'
