@@ -1,0 +1,42 @@
+name: Upload exact TEST preview 269
+
+on:
+  push:
+    branches: [codex/preview-upload-20261109-269]
+
+permissions:
+  contents: write
+  actions: read
+  attestations: read
+
+concurrency:
+  group: node-release-preview
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    if: github.repository == 'sunbird84/tden-node-releases' && github.ref == 'refs/heads/codex/preview-upload-20261109-269' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    environment: preview-node-release
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact upload source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Test upload rejection boundaries offline
+        shell: bash
+        run: python3 -I -S -B scripts/test_upload_preview_269.py
+      - name: Verify original candidate and upload to exact new draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I -S -B scripts/upload_preview_269.py
+      - name: Retain small upload and provenance receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: preview-upload-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: preview-receipts/*.json
+          if-no-files-found: warn
+          retention-days: 7
