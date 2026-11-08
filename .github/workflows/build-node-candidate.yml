@@ -112,6 +112,25 @@ jobs:
                   raise SystemExit(f'{path} conflicts with release-policy.json')
           PY
 
+      - name: Materialize reviewed synthetic shared vectors from private source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e source/tden-spec
+          test ! -L source/tden-spec
+          for rel in \
+            test-vectors/registration-operation-read-v1.json \
+            test-vectors/authenticated-enrollment-v1.json \
+            spec/testdata/token-payment-review-v1.json \
+            vectors/presence-device-proof-v1.json; do
+            src="source/tden-chain/testdata/shared-spec/$rel"
+            dst="source/tden-spec/$rel"
+            test -f "$src"
+            test ! -L "$src"
+            install -D -m 0644 -- "$src" "$dst"
+            cmp -- "$src" "$dst"
+          done
+
       - name: Run source tests
         shell: bash
         run: |
