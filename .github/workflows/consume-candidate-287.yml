@@ -1,0 +1,44 @@
+name: Verify existing TEST candidate 287
+
+on:
+  push:
+    branches: [codex/candidate-consumer-20261109-287]
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+
+concurrency:
+  group: candidate-consumer-287
+  cancel-in-progress: false
+
+jobs:
+  consume:
+    if: github.repository == 'sunbird84/tden-node-releases' && github.ref == 'refs/heads/codex/candidate-consumer-20261109-287' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact consumer source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Test consumer rejection boundaries offline
+        shell: bash
+        run: python3 -I -S -B scripts/test_consume_candidate_287.py
+
+      - name: Verify existing candidate without rebuild or publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I -S -B scripts/consume_candidate_287.py
+
+      - name: Retain small verification records only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-consumer-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: consumer-receipts/*.json
+          if-no-files-found: warn
+          retention-days: 7
