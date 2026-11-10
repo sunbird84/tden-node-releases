@@ -18,7 +18,7 @@ on:
       version:
         description: Semantic package version
         required: true
-        default: 0.12.0
+        default: 0.12.0-test.20261110.2
         type: string
 
 permissions:
@@ -37,6 +37,45 @@ jobs:
     steps:
       - name: Check out release repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Restrict privacy package test to reviewed inputs
+        shell: bash
+        env:
+          CHAIN_REF: ${{ inputs.chain_ref }}
+          GATEWAY_REF: ${{ inputs.gateway_ref }}
+          DEPLOY_REF: ${{ inputs.deploy_ref }}
+          PACKAGE_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          expected = {
+              'GITHUB_REPOSITORY': 'sunbird84/tden-node-releases',
+              'GITHUB_REPOSITORY_ID': '1335347210',
+              'GITHUB_REF': 'refs/heads/codex/node-genesis-recovery-fix-20261110',
+              'GITHUB_EVENT_NAME': 'workflow_dispatch',
+              'GITHUB_RUN_ATTEMPT': '1',
+              'CHAIN_REF': '90ed4fe56a3e7ec185e847ffeb456e9dffc2e512',
+              'GATEWAY_REF': '30e558530a668e08b3b7b856e55206ba69cd8def',
+              'DEPLOY_REF': '34e4d7b54aead0b9b39746bab7877bd7e002ab6b',
+              'PACKAGE_VERSION': '0.12.0-test.20261110.2',
+          }
+          if any(os.environ.get(key) != value for key, value in expected.items()):
+              raise SystemExit('privacy-package-input-guard: rejected input')
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          parent = '23e5c002495392c62a0772d1ec548ff9a2bb9f0e'
+          if git('rev-parse', 'HEAD') != os.environ.get('GITHUB_SHA'):
+              raise SystemExit('privacy-package-input-guard: rejected control identity')
+          if git('show', '-s', '--format=%P', 'HEAD') != parent:
+              raise SystemExit('privacy-package-input-guard: rejected parent')
+          paths = git('diff-tree', '--no-commit-id', '--name-only', '-r', parent, 'HEAD').splitlines()
+          if paths != ['.github/workflows/build-node-candidate.yml']:
+              raise SystemExit('privacy-package-input-guard: rejected control paths')
+          print('privacy-package-input-guard: accepted reviewed inputs')
+          PY
 
       - name: Reject expired public bootstrap fixture before build
         shell: bash
@@ -167,6 +206,7 @@ jobs:
           python3 -B source/deploy/node-installer/test-public-supervisor-preflight.py -v
           python3 -B source/deploy/node-installer/test-node-runtime-files.py -v
           python3 -B source/deploy/node-installer/test-install-quiescence.py -v
+          node --test source/deploy/node-installer/test-pristine-genesis-upgrade.test.mjs
           python3 -B source/deploy/node-installer/test-archive-node-package.py -v
           sudo env TDEN_TEST_SYSTEMD_SANDBOX=1 python3 -B source/deploy/node-installer/test-node-runtime-files.py RuntimeScanSystemdTests -v
           sudo python3 source/deploy/node-installer/test-caddy-handoff.py -v
