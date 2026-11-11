@@ -18,7 +18,7 @@ on:
       version:
         description: Semantic package version
         required: true
-        default: 0.12.0-test.20261111.3
+        default: 0.12.0-test.20261112.1
         type: string
 
 permissions:
@@ -54,19 +54,19 @@ jobs:
           expected = {
               'GITHUB_REPOSITORY': 'sunbird84/tden-node-releases',
               'GITHUB_REPOSITORY_ID': '1335347210',
-              'GITHUB_REF': 'refs/heads/codex/node-private-intake-20261111',
+              'GITHUB_REF': 'refs/heads/codex/node-core-team-20261112',
               'GITHUB_EVENT_NAME': 'workflow_dispatch',
               'GITHUB_RUN_ATTEMPT': '1',
-              'CHAIN_REF': '8c6820aeb7a682c7e08ec613e635d92b161a9f1c',
-              'GATEWAY_REF': '9c6d9205d626e7952a6ee3ac1ff34c9d37b891e2',
-              'DEPLOY_REF': 'a19edf8321c4c8b5df5c426710ad3041db38d3f5',
-              'PACKAGE_VERSION': '0.12.0-test.20261111.3',
+              'CHAIN_REF': '0a13062cdfc955d4c1fd33e478ddab36095aa804',
+              'GATEWAY_REF': '5e8027b3af3cf2cbd15621cee2e100100d19993a',
+              'DEPLOY_REF': '6afe37b6acd835f15e02c8531f14a573da1ca8dd',
+              'PACKAGE_VERSION': '0.12.0-test.20261112.1',
           }
           if any(os.environ.get(key) != value for key, value in expected.items()):
               raise SystemExit('privacy-package-input-guard: rejected input')
           def git(*args):
               return subprocess.check_output(['git', *args], text=True).strip()
-          parent = 'bc1a3f264402442c408e6d25dc1308c23c40c974'
+          parent = 'd98933b9ad439d39c3cc3343b513a94d27a08728'
           if git('rev-parse', 'HEAD') != os.environ.get('GITHUB_SHA'):
               raise SystemExit('privacy-package-input-guard: rejected control identity')
           if git('show', '-s', '--format=%P', 'HEAD') != parent:
