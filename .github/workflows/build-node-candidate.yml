@@ -69,9 +69,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: 1.26.7
-          cache-dependency-path: |
-            source/tden-chain/go.sum
-            source/tden-gateway/go.sum
+          cache: false
 
       - name: Verify source revisions are exact and clean
         shell: pwsh
@@ -161,12 +159,58 @@ jobs:
           pwsh -NoProfile -File source/deploy/node-installer/test-release-isolation.ps1
           pwsh -NoProfile -File source/deploy/node-installer/test-node-runtime-upgrade-contract.ps1
 
+      - name: Bind original module cache input path
+        shell: bash
+        run: |
+          set -euo pipefail
+          original_base=/root/TDEN2_LOCAL_NODE_20261112
+          original_cache="$original_base/cache/go-mod"
+          source_cache="$(go env GOMODCACHE)"
+          state="$RUNNER_TEMP/tden-original-module-path-state"
+          test "$source_cache" = /home/runner/go/pkg/mod
+          test -d "$source_cache"
+          test ! -e "$state"
+          test ! -e "$RUNNER_TEMP/tden-original-build-cache"
+          if sudo test -e "$original_base" || sudo test -L "$original_base"; then
+            echo 'Original module input path already exists; refusing to replace it' >&2
+            exit 1
+          fi
+          umask 077
+          mkdir "$state" "$RUNNER_TEMP/tden-original-build-cache"
+          test ! -L /root
+          test "$(stat -c %u /root)" = 0
+          sudo python3 - "$state/root-permissions.json" <<'PY'
+          import base64, errno, json, os, stat, sys
+          try:
+              acl = os.getxattr('/root', 'system.posix_acl_access')
+          except OSError as error:
+              if error.errno not in (errno.ENODATA, errno.ENOTSUP): raise
+              acl = None
+          value = {'mode': stat.S_IMODE(os.stat('/root').st_mode), 'acl': None if acl is None else base64.b64encode(acl).decode('ascii')}
+          fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+              json.dump(value, stream, sort_keys=True)
+              stream.flush()
+              os.fsync(stream.fileno())
+          PY
+          printf '%s\n' "$source_cache" > "$state/source-cache"
+          sudo mkdir -m 0755 "$original_base"
+          touch "$state/base-created"
+          sudo mkdir -m 0755 "$original_base/cache"
+          sudo ln -s "$source_cache" "$original_cache"
+          touch "$state/alias-created"
+          sudo chmod go+x /root
+          test "$(readlink "$original_cache")" = "$source_cache"
+          printf '%s  %s\n' '444cf1e9d9a0462634bd718cd26d5926a5a70a7b0c76610611e7f2658335b581' "$original_cache/github.com/consensys/gnark-crypto@v0.20.1/field/asm/element_4w/element_4w_amd64.s" | sha256sum --check --strict -
+
       - name: Build deterministic Linux package
         shell: pwsh
         env:
           GOWORK: 'off'
           GOMAXPROCS: '4'
           GOFLAGS: '-mod=readonly -p=4'
+          GOMODCACHE: '/root/TDEN2_LOCAL_NODE_20261112/cache/go-mod'
+          GOCACHE: '${{ runner.temp }}/tden-original-build-cache'
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path output/package -Force | Out-Null
@@ -184,8 +228,12 @@ jobs:
 
       - name: Record exact build measurements
         shell: bash
+        env:
+          GOMODCACHE: '/root/TDEN2_LOCAL_NODE_20261112/cache/go-mod'
+          GOCACHE: '${{ runner.temp }}/tden-original-build-cache'
         run: |
           set -euo pipefail
+          go env GOMODCACHE GOCACHE
           go version
           sha256sum "$(command -v go)"
           python3 - <<'PY'
@@ -209,6 +257,14 @@ jobs:
           (cd output/release && sha256sum tden-node-linux-amd64.tar.gz > tden-node-linux-amd64.tar.gz.sha256)
           python3 scripts/candidate_metadata.py create
 
+      - name: Verify original archive byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 'ea9c0c35d329bf96ac832b3478b20d56184fbae4f47eb31bcacb63f2d3f8a2e8' output/package/tden-node-runtime-upgrade | sha256sum --check --strict -
+          printf '%s  %s\n' '8273d096efc6931ad39a147179240d9ba028972c1f69c47f49e17ca023a9a285' output/release/tden-node-linux-amd64.tar.gz | sha256sum --check --strict -
+          test "$(stat -c %s output/release/tden-node-linux-amd64.tar.gz)" = 407233839
+
       - name: Verify archived bootstrap and original metadata
         shell: bash
         env:
@@ -218,6 +274,50 @@ jobs:
             --archive output/release/tden-node-linux-amd64.tar.gz \
             --version "$CANDIDATE_VERSION" \
             --materials scripts/fixtures/bootstrap-preflight
+
+      - name: Restore temporary module path access
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$RUNNER_TEMP/tden-original-module-path-state"
+          original_base=/root/TDEN2_LOCAL_NODE_20261112
+          original_cache="$original_base/cache/go-mod"
+          if test -f "$state/root-permissions.json"; then
+            sudo python3 - "$state/root-permissions.json" <<'PY'
+          import base64, errno, json, os, stat, sys
+          with open(sys.argv[1], encoding='utf-8') as stream:
+              value = json.load(stream)
+          mode = value['mode']
+          if type(mode) is not int or not 0 <= mode <= 0o7777: raise ValueError('invalid captured mode')
+          original_acl = None if value['acl'] is None else base64.b64decode(value['acl'], validate=True)
+          os.chmod('/root', mode)
+          if original_acl is not None:
+              os.setxattr('/root', 'system.posix_acl_access', original_acl)
+          else:
+              try:
+                  os.removexattr('/root', 'system.posix_acl_access')
+              except OSError as error:
+                  if error.errno not in (errno.ENODATA, errno.ENOTSUP): raise
+          try:
+              actual_acl = os.getxattr('/root', 'system.posix_acl_access')
+          except OSError as error:
+              if error.errno not in (errno.ENODATA, errno.ENOTSUP): raise
+              actual_acl = None
+          if stat.S_IMODE(os.stat('/root').st_mode) != mode or actual_acl != original_acl:
+              raise ValueError('original mode/ACL restoration mismatch')
+          print('PASS: original root mode and ACL restored and read back')
+          PY
+          fi
+          if test -f "$state/alias-created"; then
+            source_cache="$(cat "$state/source-cache")"
+            test "$(sudo readlink "$original_cache")" = "$source_cache"
+            sudo rm -- "$original_cache"
+          fi
+          if test -f "$state/base-created"; then
+            if sudo test -d "$original_base/cache"; then sudo rmdir "$original_base/cache"; fi
+            sudo rmdir "$original_base"
+          fi
 
       - name: Upload candidate without publishing a Release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
