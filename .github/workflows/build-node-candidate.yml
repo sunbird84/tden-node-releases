@@ -163,6 +163,10 @@ jobs:
 
       - name: Build deterministic Linux package
         shell: pwsh
+        env:
+          GOWORK: 'off'
+          GOMAXPROCS: '4'
+          GOFLAGS: '-mod=readonly -p=4'
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path output/package -Force | Out-Null
@@ -177,6 +181,21 @@ jobs:
             -Profile public `
             -Architecture amd64 `
             -Version '${{ inputs.version }}'
+
+      - name: Record exact build measurements
+        shell: bash
+        run: |
+          set -euo pipefail
+          go version
+          sha256sum "$(command -v go)"
+          python3 - <<'PY'
+          import json, sys, zlib
+          print(json.dumps({'python': sys.version, 'zlib_compile': zlib.ZLIB_VERSION, 'zlib_runtime': zlib.ZLIB_RUNTIME_VERSION}, sort_keys=True))
+          PY
+          go version -m -json output/package/tden-node-runtime-upgrade
+          cat output/package/package.sha256
+          (cd source/tden-chain && go mod verify)
+          (cd source/tden-gateway && go mod verify)
 
       - name: Archive and describe candidate
         shell: bash
