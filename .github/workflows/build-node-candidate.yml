@@ -257,13 +257,17 @@ jobs:
           (cd output/release && sha256sum tden-node-linux-amd64.tar.gz > tden-node-linux-amd64.tar.gz.sha256)
           python3 scripts/candidate_metadata.py create
 
-      - name: Verify original archive byte identity
+      - name: Verify exact candidate archive byte identity
         shell: bash
         run: |
           set -euo pipefail
+          test '${{ inputs.version }}' = '0.12.0-test.20261113.3'
+          test '${{ inputs.chain_ref }}' = 'ce283dc37dce80ee8e53cf5737e3ed6a07adaf08'
+          test '${{ inputs.gateway_ref }}' = 'e458dce38eefb237b2019f1c908a0994a7b608cd'
+          test '${{ inputs.deploy_ref }}' = 'f00df8dab538cce650a15c8ee9794c3289f3fb5a'
           printf '%s  %s\n' 'ea9c0c35d329bf96ac832b3478b20d56184fbae4f47eb31bcacb63f2d3f8a2e8' output/package/tden-node-runtime-upgrade | sha256sum --check --strict -
-          printf '%s  %s\n' '8273d096efc6931ad39a147179240d9ba028972c1f69c47f49e17ca023a9a285' output/release/tden-node-linux-amd64.tar.gz | sha256sum --check --strict -
-          test "$(stat -c %s output/release/tden-node-linux-amd64.tar.gz)" = 407233839
+          printf '%s  %s\n' '26365ca9111d0c8f516035dc7493752e3f913f5e82d38bb827d63dfc63526005' output/release/tden-node-linux-amd64.tar.gz | sha256sum --check --strict -
+          test "$(stat -c %s output/release/tden-node-linux-amd64.tar.gz)" = 407250289
 
       - name: Verify archived bootstrap and original metadata
         shell: bash
