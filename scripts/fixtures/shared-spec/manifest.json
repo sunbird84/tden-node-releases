@@ -1,0 +1,31 @@
+{
+  "protocol": "tden:ci-shared-spec-fixtures:v1",
+  "scope": "Synthetic protocol test inputs only",
+  "source": {
+    "repository": "sunbird84/tden-spec",
+    "localHeadForContextOnly": "3b0dcb21e1a0d9394f271d06c1f641001646f29f",
+    "fixtureCommitClaimed": false
+  },
+  "files": [
+    {
+      "path": "test-vectors/authenticated-enrollment-v1.json",
+      "sha256": "8221a9c88638f3c5ad8d844b60d7ff0558403484978994e9e693a237ecfea22d",
+      "bytes": 4971
+    },
+    {
+      "path": "test-vectors/registration-operation-read-v1.json",
+      "sha256": "2a38d745c820160858126863176ee77e6a014e822823ec8cb54020ce4dc734c5",
+      "bytes": 946
+    },
+    {
+      "path": "spec/testdata/token-payment-review-v1.json",
+      "sha256": "7006a2c8a86e34f48de22f3e39f77a262b2b5403f0b55d16c0d1774835b91b39",
+      "bytes": 1462
+    },
+    {
+      "path": "vectors/presence-device-proof-v1.json",
+      "sha256": "6280b71899e0b5284b57408ac8e73a58cafb53a362b0b3b44a9e305902b19f6d",
+      "bytes": 3401
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "fixture": "synthetic-read-consent-only-not-authority-or-ZK",
+  "challenge": {
+    "protocol": "tden:registration-operation-read:v1",
+    "network_id": "tden-enrollment-test",
+    "genesis_sha256": "8b68991c944ace13d3ebb43e202676eaa0873e1ee6ec0eb3a811ba228e21611b",
+    "operation_id": "4245c3d2c85628cdb1a3f3066dfe012383fa9d5d3442b0ca158b8f66a76a919b",
+    "challenge_id": "1e4f38c105b6092121edfc1afc30022ec88828c6d38bc62bd81f8ecc14c19ea6",
+    "nonce": "642df3194f2ed38e4b8be9def169c6a2f47763f51258bd7c8b90828bc69f76f2",
+    "purpose": "read_registration_operation",
+    "owner_signing_pubkey": "b52de5ed2bd94f1b19fd74eb8e7d99740525e138fd13b374bb16e8c209bb0bf7",
+    "issued_at": "1784160000",
+    "expires_at": "1784160300"
+  },
+  "expected_message_sha256": "bdd259c77b5febe6e56ac7017b1232f9e362ffcaf234f9ebf68dd1b27baffb45",
+  "signature_b64url": "RantTt4AyelO_PZ0aON6jD66sRJr3iS_oV04Pd-DQkvSDt1qoGKCgJ2gWEdhHYWeej2_E07V9U7G9kTiLEZ_Aw"
+}

@@ -112,6 +112,12 @@ jobs:
                   raise SystemExit(f'{path} conflicts with release-policy.json')
           PY
 
+      - name: Stage exact shared protocol test vectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_shared_spec_fixtures.py
+
       - name: Run source tests
         shell: bash
         run: |
