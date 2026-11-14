@@ -273,18 +273,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test '${{ inputs.version }}' = '0.12.0-test.20261114.2'
+          test '${{ inputs.version }}' = '0.12.0-test.20261114.3'
           test '${{ inputs.chain_ref }}' = 'ce283dc37dce80ee8e53cf5737e3ed6a07adaf08'
           test '${{ inputs.gateway_ref }}' = 'e458dce38eefb237b2019f1c908a0994a7b608cd'
-          test '${{ inputs.deploy_ref }}' = 'f60f9f44b48df084d54fb8f3b3091c7b08fbcb5e'
+          test '${{ inputs.deploy_ref }}' = 'f7da3cc0c5d1cc85773bbedb9ef2b059ea08a269'
           printf '%s  %s\n' 'ea9c0c35d329bf96ac832b3478b20d56184fbae4f47eb31bcacb63f2d3f8a2e8' output/package/tden-node-runtime-upgrade | sha256sum --check --strict -
           printf '%s  %s\n' '957734429a28c70033bd1d1998cd49be54a6f1ea383a0653a6d0583f66215a56' output/package/tdend | sha256sum --check --strict -
           printf '%s  %s\n' '533a1e6ee8cce5385ed1e2e25a48be36f2e8e0f452253f58e0fc52526d461521' output/package/tden-gateway | sha256sum --check --strict -
           printf '%s  %s\n' '497cd9e00db846da839bd31cfb9ffccc88c0894faeea956a06c84c20eeb9e13c' output/package/install.sh | sha256sum --check --strict -
-          printf '%s  %s\n' '8a70b3171e0dd58166f2456f4a75d1c59193dfb9cb6f2efda188ae599a13720f' output/package/node-runtime-files.py | sha256sum --check --strict -
-          printf '%s  %s\n' '4efa45a05721daf147836e72ac8371ec87dcd355321e41cecd4eebd7e0550bf5' output/package/package.sha256 | sha256sum --check --strict -
-          printf '%s  %s\n' '3795ee7d60674a3da89752919235c9f3227105f2d821f90bf62190779cf768e6' output/release/tden-node-linux-amd64.tar.gz | sha256sum --check --strict -
-          test "$(stat -c %s output/release/tden-node-linux-amd64.tar.gz)" = 407317490
+          printf '%s  %s\n' '79f3f524fcc6cf676277b73633851e9d387e73ca92975ad84421776e8f2f6388' output/package/node-runtime-files.py | sha256sum --check --strict -
+          printf '%s  %s\n' '2df1e809a745e8de5780e51e0e451d5c79d7e4b829dbf7cc226a97bf9de55026' output/package/package.sha256 | sha256sum --check --strict -
+          printf '%s  %s\n' '4e889447977cd0f3a618ae2543565e2df7182963e89252f787d27bad40067ad3' output/release/tden-node-linux-amd64.tar.gz | sha256sum --check --strict -
+          test "$(stat -c %s output/release/tden-node-linux-amd64.tar.gz)" = 407317526
 
       - name: Verify archived bootstrap and original metadata
         shell: bash
