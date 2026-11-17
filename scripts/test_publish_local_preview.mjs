@@ -28,6 +28,12 @@ function fixture(t) {
   return { snapshot, verification };
 }
 
+test('accepts asset keys sorted by the real Python JSON serializer', t => {
+  const prepared = fixture(t);
+  prepared.verification.assets = prepared.verification.assets.map(({ name, bytes, sha256 }) => ({ bytes, name, sha256 }));
+  assert.doesNotThrow(() => validateVerification(prepared.verification, prepared.snapshot));
+});
+
 function fakeGitHub(prepared, { existing = false, draft = true, count = 0, hook, failUpload = false } = {}) {
   const v = prepared.verification;
   let serial = 20;

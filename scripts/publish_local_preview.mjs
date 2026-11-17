@@ -74,7 +74,8 @@ export function validateVerification(value, snapshot) {
   requireThat(Array.isArray(value.assets) && value.assets.length === 3
     && value.assets.every(a => a && equal(Object.keys(a).sort(), ['bytes', 'name', 'sha256'])
       && Number.isSafeInteger(a.bytes) && a.bytes > 0 && hex(a.sha256, 64))
-    && equal(value.assets, expected)
+    && value.assets.every((asset, i) => asset.name === expected[i].name
+      && asset.bytes === expected[i].bytes && asset.sha256 === expected[i].sha256)
     && value.archive_sha256 === expected.find(a => a.name.endsWith('.tar.gz')).sha256,
   'Independent verification does not match the actual three assets.');
   return value;
