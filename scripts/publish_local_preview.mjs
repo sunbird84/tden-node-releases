@@ -82,6 +82,32 @@ export function validateVerification(value, snapshot) {
   return value;
 }
 
+// Release-body contract shared with Native's API and Atom catalogs. These are
+// discovery metadata only: publication does not authorize a node upgrade.
+// The production caller has independently verified the entire descriptor; bind
+// this read to those same bytes and serialize only fixed markers and typed data.
+export function localPreviewReleaseBody({ snapshot, verification: v }) {
+  validateVerification(v, snapshot);
+  const asset = snapshot.files.find(file => file.name === 'candidate-build.json');
+  requireThat(asset && asset.bytes <= 65536, 'Verified candidate descriptor is missing or oversized.');
+  const bytes = fs.readFileSync(asset.filename);
+  requireThat(bytes.length === asset.bytes && crypto.createHash('sha256').update(bytes).digest('hex') === asset.sha256,
+    'Candidate descriptor changed after independent verification.');
+  const descriptor = JSON.parse(bytes.toString('utf8'));
+  const archive = v.assets.find(file => file.name === 'tden-node-linux-amd64.tar.gz');
+  requireThat(descriptor.protocol === 'tden:node-candidate-build:v1' && descriptor.build_environment === 'local'
+    && descriptor.version === v.version && descriptor.archive_sha256 === v.archive_sha256
+    && Number.isSafeInteger(descriptor.archive_bytes) && descriptor.archive_bytes === archive.bytes
+    && descriptor.local_build_provenance?.control_commit === v.control_commit
+    && hex(descriptor.bootstrap_trust_template_sha256, 64) && hex(descriptor.tuf_root_sha256, 64),
+  'Verified descriptor does not bind the local preview catalog metadata.');
+  return 'Locally built TEST recovery preview. This is not a stable release, Core Team organization signature, public-node upgrade directive, TUF promotion, or deployment acceptance.\n\n'
+    + `Control commit: ${v.control_commit}\nArchive SHA-256: ${v.archive_sha256}\n`
+    + `Archive bytes: ${descriptor.archive_bytes}\nRelease channel: preview\n`
+    + `Bootstrap trust template SHA-256: ${descriptor.bootstrap_trust_template_sha256}\n`
+    + `TUF root SHA-256: ${descriptor.tuf_root_sha256}\n`;
+}
+
 export function childEnvironment(source = process.env) {
   const env = { ...source, GH_HOST: 'github.com', GH_PROMPT_DISABLED: '1', NO_COLOR: '1' };
   for (const key of Object.keys(env)) {
@@ -176,6 +202,7 @@ export function publishPrepared(prepared, gh = productionGh, uploadTransport = '
   const { snapshot, verification: v } = prepared;
   validateVerification(v, snapshot);
   assertUnchanged(snapshot);
+  const releaseBody = localPreviewReleaseBody(prepared);
   const prefix = `repos/${REPOSITORY}`;
   const api = (method, endpoint, body, missing = false) => {
     const args = ['api', '--hostname', 'github.com', '--method', method, `${prefix}/${endpoint}`];
@@ -251,6 +278,7 @@ export function publishPrepared(prepared, gh = productionGh, uploadTransport = '
     checkAssets(release.id, !release.draft);
     if (!release.draft) {
       assertUnchanged(snapshot);
+      requireThat(release.body === releaseBody, 'Published preview catalog metadata differs; no automatic repair is allowed.');
       return { protocol: 'tden:node-local-preview-publication:v1', result: 'already-published-verified',
         repository: REPOSITORY, tag: v.tag, control_commit: v.control_commit };
     }
@@ -266,8 +294,7 @@ export function publishPrepared(prepared, gh = productionGh, uploadTransport = '
     release = api('POST', 'releases', {
       tag_name: v.tag, target_commitish: v.control_commit,
       name: `Local TEST recovery preview ${v.tag}`,
-      body: 'Locally built TEST recovery preview. This is not a stable release, Core Team organization signature, public-node upgrade directive, TUF promotion, or deployment acceptance.\n\n'
-        + `Control commit: ${v.control_commit}\nArchive SHA-256: ${v.archive_sha256}\n`,
+      body: releaseBody,
       draft: true, prerelease: true, make_latest: 'false',
     });
     checkRelease(release, undefined, true);
@@ -290,8 +317,9 @@ export function publishPrepared(prepared, gh = productionGh, uploadTransport = '
   checkRef();
   checkAssets(id, true);
   assertUnchanged(snapshot);
-  api('PATCH', `releases/${id}`, { draft: false, prerelease: true, make_latest: 'false' });
-  checkRelease(api('GET', `releases/${id}`), id, false);
+  api('PATCH', `releases/${id}`, { draft: false, prerelease: true, make_latest: 'false', body: releaseBody });
+  const published = checkRelease(api('GET', `releases/${id}`), id, false);
+  requireThat(published.body === releaseBody, 'Published preview catalog metadata was not preserved.');
   checkRef();
   checkAssets(id, true);
   assertUnchanged(snapshot);

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { ASSET_NAMES, REPOSITORY, captureInputs, assertUnchanged, validateVerification,
-  publishPrepared, parseArguments, childEnvironment, verificationFailure, transportFailure } from './publish_local_preview.mjs';
+  publishPrepared, localPreviewReleaseBody, parseArguments, childEnvironment, verificationFailure, transportFailure } from './publish_local_preview.mjs';
 
 // Synthetic verifier results exercise the transport boundary, not package trust.
 // The CLI has no injected verifier or option to consume these test results.
@@ -16,6 +16,13 @@ function fixture(t) {
   const directory = path.join(root, 'assets');
   fs.mkdirSync(directory);
   for (const name of ASSET_NAMES) fs.writeFileSync(path.join(directory, name), `synthetic ${name}\n`);
+  const archiveFile = path.join(directory, 'tden-node-linux-amd64.tar.gz');
+  fs.writeFileSync(path.join(directory, 'candidate-build.json'), JSON.stringify({
+    protocol: 'tden:node-candidate-build:v1', version: '0.12-TEST', build_environment: 'local',
+    archive_sha256: sha(fs.readFileSync(archiveFile)), archive_bytes: fs.statSync(archiveFile).size,
+    bootstrap_trust_template_sha256: 'b'.repeat(64), tuf_root_sha256: 'c'.repeat(64),
+    local_build_provenance: { control_commit: 'a'.repeat(40) },
+  }) + '\n');
   const request = path.join(root, 'request.json');
   fs.writeFileSync(request, '{"fixture":true}\n');
   const snapshot = captureInputs(request, directory);
@@ -38,7 +45,8 @@ function fakeGitHub(prepared, { existing = false, draft = true, count = 0, hook,
   const v = prepared.verification;
   let serial = 20;
   const state = { calls: [], uploads: [], writes: [], tagCommit: existing ? v.control_commit : null,
-    release: existing ? { id: 7, tag_name: v.tag, target_commitish: v.control_commit, draft, prerelease: true } : null,
+    release: existing ? { id: 7, tag_name: v.tag, target_commitish: v.control_commit, draft, prerelease: true,
+      body: localPreviewReleaseBody(prepared) } : null,
     assets: v.assets.slice(0, count).map(a => ({ id: serial++, name: a.name, size: a.bytes,
       digest: `sha256:${a.sha256}`, state: 'uploaded' })) };
   const ok = value => ({ status: 0, stdout: JSON.stringify(value), stderr: '' });
@@ -87,7 +95,9 @@ function fakeGitHub(prepared, { existing = false, draft = true, count = 0, hook,
     if (method === 'GET' && endpoint === 'releases/7') return ok(state.release);
     if (method === 'GET' && endpoint === 'releases/7/assets?per_page=100') return ok(state.assets);
     if (method === 'PATCH' && endpoint === 'releases/7') {
-      assert.deepEqual(body, { draft: false, prerelease: true, make_latest: 'false' });
+      const { body: releaseBody, ...flags } = body;
+      assert.deepEqual(flags, { draft: false, prerelease: true, make_latest: 'false' });
+      assertNativeCatalogBody(releaseBody, prepared);
       Object.assign(state.release, body);
       return ok(state.release);
     }
@@ -126,6 +136,81 @@ test('new preview creates exact commit tag, drafts, uploads verified bytes, then
   assert.equal(gh.release.draft, false);
   assert.ok(!gh.release.body.includes(prepared.snapshot.directory));
   assert.ok(!gh.release.body.includes(prepared.snapshot.request));
+});
+
+// Consumer contract: deployment_client.rs official_node_packages_from_releases,
+// release_body_sha256, release_body_archive_bytes and release_feed_prerelease.
+// The API trusts its asset size; Atom must recover it and the preview channel
+// from GitHub-rendered HTML. Neither transport grants upgrade authority.
+function assertNativeCatalogBody(body, prepared) {
+  const descriptor = JSON.parse(fs.readFileSync(prepared.snapshot.files[0].filename, 'utf8'));
+  assert.ok(body.includes(`Bootstrap trust template SHA-256: ${descriptor.bootstrap_trust_template_sha256}`));
+  assert.ok(body.includes(`TUF root SHA-256: ${descriptor.tuf_root_sha256}`));
+  const html = '<p>' + body.replaceAll('\n\n', '</p><p>') + '</p>';
+  const digest = html.split('Archive SHA-256: ')[1]?.slice(0, 64);
+  assert.equal(digest, prepared.verification.tag.slice(-64));
+  const byteDigits = /^\d{1,20}/.exec(html.split('Archive bytes: ')[1] ?? '')?.[0];
+  assert.equal(Number(byteDigits), descriptor.archive_bytes);
+  assert.equal(html.split('Release channel: ').length, 2, 'Atom rejects repeated channel markers');
+  assert.equal(html.split('Release channel: ')[1].split(/[<\r\n]/)[0].trim(), 'preview');
+}
+
+test('new preview body is discoverable by both Native API and Atom catalog consumers', t => {
+  const prepared = fixture(t), gh = fakeGitHub(prepared);
+  publishPrepared(prepared, gh.runner);
+  assertNativeCatalogBody(gh.release.body, prepared);
+  assert.match(gh.release.body, /not a stable release, Core Team organization signature/);
+  assert.match(gh.release.body, /public-node upgrade directive, TUF promotion, or deployment acceptance/);
+});
+
+test('resumed draft gains catalog metadata only with the final verified publication', t => {
+  const prepared = fixture(t), gh = fakeGitHub(prepared, { existing: true, count: 1 });
+  gh.release.body = 'Old draft missing catalog metadata';
+  publishPrepared(prepared, gh.runner);
+  assertNativeCatalogBody(gh.release.body, prepared);
+  assert.equal(gh.writes.length, 1);
+  assert.equal(gh.writes[0].method, 'PATCH');
+  assert.equal(gh.writes[0].body.draft, false);
+});
+
+test('published body without catalog metadata is rejected without remote repair', t => {
+  const prepared = fixture(t), gh = fakeGitHub(prepared, { existing: true, draft: false, count: 3 });
+  gh.release.body = 'Old published body missing catalog metadata';
+  assert.throws(() => publishPrepared(prepared, gh.runner), /catalog metadata differs/);
+  assert.equal(gh.writes.length + gh.uploads.length, 0);
+});
+
+test('publication fails when GitHub does not preserve the catalog metadata patch', t => {
+  const prepared = fixture(t);
+  const gh = fakeGitHub(prepared, { existing: true, count: 3, hook: ({ method, endpoint, state }) => {
+    if (method === 'GET' && endpoint === 'releases/7' && !state.release.draft) state.release.body = '';
+  } });
+  assert.throws(() => publishPrepared(prepared, gh.runner), /catalog metadata was not preserved/);
+  assert.equal(gh.writes.length, 1, 'No retry or repair follows an unexpected publication result');
+});
+
+test('descriptor metadata injection or mismatched package identity stops before GitHub', t => {
+  for (const change of [d => d.bootstrap_trust_template_sha256 += '\nRelease channel: stable',
+    d => d.tuf_root_sha256 = 'not-a-digest', d => d.archive_bytes++, d => d.archive_sha256 = 'd'.repeat(64),
+    d => d.local_build_provenance.control_commit = 'd'.repeat(40), d => d.version = 'another-version']) {
+    const prepared = fixture(t), descriptorPath = prepared.snapshot.files[0].filename;
+    const descriptor = JSON.parse(fs.readFileSync(descriptorPath, 'utf8'));
+    change(descriptor);
+    fs.writeFileSync(descriptorPath, JSON.stringify(descriptor));
+    // A synthetic verifier claim reaches the separate metadata type/binding
+    // guards; production's Python verifier rejects this descriptor even earlier.
+    prepared.snapshot = captureInputs(prepared.snapshot.request, prepared.snapshot.directory);
+    prepared.verification.assets = prepared.snapshot.files.map(({ name, bytes, sha256 }) => ({ name, bytes, sha256 }));
+    let calls = 0;
+    assert.throws(() => publishPrepared(prepared, () => { calls++; }), /descriptor does not bind/);
+    assert.equal(calls, 0);
+  }
+});
+
+test('catalog formatter cannot consume descriptor bytes changed after verification', t => {
+  const prepared = fixture(t);
+  fs.appendFileSync(prepared.snapshot.files[0].filename, ' ');
+  assert.throws(() => localPreviewReleaseBody(prepared), /descriptor changed after independent verification/);
 });
 
 test('matching existing published preview is read-only', t => {
