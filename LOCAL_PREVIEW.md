@@ -33,6 +33,16 @@ local. The public descriptor contains hashes and public source references only.
    available for inspection; published assets cannot be replaced. Reinvocation
    revalidates everything and can fill missing assets in a matching draft.
 
+   `--upload-transport wsl-curl` explicitly selects the existing Ubuntu curl
+   for file uploads. All preparation, tag, draft and asset checks still run.
+   The existing Windows GitHub login is passed through private process stdin
+   on this computer only. No token enters command arguments, environment,
+   files or diagnostics; no new login or credential copy to a server is used.
+   Curl uses its system CA store, a retained and rehashed file descriptor,
+   no curlrc, no redirects and zero configured retries. A failed or interrupted
+   request requires an independent asset-state read before any new attempt.
+   This option changes the transport only, not the build or node authority.
+
 The tag binds the archive digest and resolves to the control commit. Existing
 hosted creation, attestation and promotion workflows remain independent.
 Normal updates still use Core Team organization authority. An initial-sync
@@ -44,6 +54,8 @@ Local checks:
 ```text
 python3 -I -B scripts/test_local_candidate_metadata.py
 node --test scripts/test_publish_local_preview.mjs
+node --test scripts/test_local_preview_upload.mjs
+python3 -I -B scripts/test_local_preview_upload.py
 ```
 
 The Node transport tests simulate GitHub. Actual publication and node recovery

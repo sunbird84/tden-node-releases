@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { uploadWithWslCurl } from './local_preview_upload.mjs';
 
 export const REPOSITORY = 'sunbird84/tden-node-releases';
 export const ASSET_NAMES = Object.freeze([
@@ -106,8 +107,42 @@ export function verificationFailure(result) {
 
 export function transportFailure(result) {
   const stderr = String(result.stderr ?? '');
-  const classes = [...new Set(stderr.match(/HTTP [45][0-9]{2}|TLS handshake timeout|context deadline exceeded|connection reset|i\/o timeout|unexpected EOF|broken pipe|EOF/gi) ?? [])];
-  return `exit=${Number.isInteger(result.status) ? result.status : 'no-exit'}, transport=${classes.join('|') || 'unclassified'}, stderr_sha256=${crypto.createHash('sha256').update(stderr).digest('hex')}`;
+  // Never copy a process field or a matched error substring into diagnostics.
+  // Exact allowlists preserve useful causes without exposing URLs or credentials.
+  const processCodes = new Set(['ETIMEDOUT', 'ENOBUFS', 'ENOENT', 'EACCES', 'EPERM', 'EPIPE',
+    'ECONNRESET', 'ECONNABORTED', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH',
+    'EAI_AGAIN', 'ENOTFOUND', 'ECANCELED', 'EINVAL']);
+  const signals = new Set(['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGABRT', 'SIGBREAK', 'SIGHUP',
+    'SIGQUIT', 'SIGSEGV', 'SIGBUS', 'SIGILL', 'SIGFPE', 'SIGPIPE', 'SIGTRAP',
+    'SIGSYS', 'SIGXCPU', 'SIGXFSZ']);
+  const processCode = result.error == null ? 'none'
+    : processCodes.has(result.error.code) ? result.error.code : 'unclassified';
+  const signal = result.signal == null ? 'none'
+    : signals.has(result.signal) ? result.signal : 'unclassified';
+  const exit = Number.isInteger(result.status) && result.status >= -2147483648 && result.status <= 4294967295
+    ? result.status : 'no-exit';
+  const families = [
+    ['SOCKET_IO', /\b(?:wsarecv|wsasend)\b/i],
+    ['SOCKET_RESET', /\b(?:ECONNRESET|WSAECONNRESET)\b|\bconnection reset\b|\bforcibly closed\b/i],
+    ['SOCKET_ABORT', /\b(?:ECONNABORTED|WSAECONNABORTED)\b|\bconnection (?:was |has been )?aborted\b|\bsoftware caused connection abort\b/i],
+    ['SOCKET_TIMEOUT', /\b(?:ETIMEDOUT|WSAETIMEDOUT)\b|\bi\/o timeout\b|\bconnection timed out\b|\bconnected host has failed to respond\b/i],
+    ['SOCKET_REFUSED', /\b(?:ECONNREFUSED|WSAECONNREFUSED)\b|\bconnection refused\b|\btarget machine actively refused\b/i],
+    ['DNS', /\b(?:ENOTFOUND|EAI_AGAIN|WSAHOST_NOT_FOUND|WSATRY_AGAIN)\b|\bno such host\b|\btemporary failure in name resolution\b|\bcould(?: not|n't) resolve (?:host|proxy)\b/i],
+    ['TLS_CERTIFICATE', /\bx509:|\bcertificate (?:verify failed|signed by unknown authority|has expired|is not yet valid)\b|\bCERT_(?:E_EXPIRED|E_UNTRUSTEDROOT|E_CN_NO_MATCH)\b/i],
+    ['TLS_HANDSHAKE', /\bTLS handshake timeout\b|\btls: (?:handshake failure|first record does not look like a TLS handshake)\b|\bSSL connect error\b/i],
+    ['CERT_REVOCATION_OFFLINE', /\bCRYPT_E_REVOCATION_OFFLINE\b|\b0x80092013\b/i],
+    ['HTTP2', /\b(?:http2|HTTP\/2|REFUSED_STREAM|GOAWAY)\b|\bstream error: [^\r\n]{0,160}\b(?:INTERNAL_ERROR|PROTOCOL_ERROR|FLOW_CONTROL_ERROR)\b/i],
+    ['REQUEST_TIMEOUT', /\bcontext deadline exceeded\b/i],
+    ['UNEXPECTED_EOF', /\bunexpected EOF\b/i],
+    ['BROKEN_PIPE', /\bbroken pipe\b|\bEPIPE\b/i],
+  ];
+  const classes = families.filter(([, pattern]) => pattern.test(stderr)).map(([label]) => label);
+  if (!classes.includes('UNEXPECTED_EOF') && /\bEOF\b/i.test(stderr)) classes.push('EOF');
+  const statuses = [...new Set([...stderr.matchAll(/\bHTTP(?:\/(?:1\.[01]|2(?:\.0)?))?[ \t]+([45][0-9]{2})\b/gi)]
+    .map(match => Number(match[1])))].sort((a, b) => a - b);
+  classes.push(...statuses.slice(0, 8).map(code => `HTTP ${code}`));
+  if (statuses.length > 8) classes.push('HTTP_STATUS_LIMIT');
+  return `exit=${exit}, process=${processCode}, signal=${signal}, transport=${classes.join('|') || 'unclassified'}, stderr_sha256=${crypto.createHash('sha256').update(stderr).digest('hex')}`;
 }
 
 function wslPath(filename) {
@@ -134,7 +169,8 @@ export function preparePreview(requestPath, assetDirectory) {
 const productionGh = (args, input) => run('C:\\Program Files\\GitHub CLI\\gh.exe', args, input);
 // Shared transport engine, exported for isolated tests. The production CLI can
 // reach it only after preparePreview; no CLI flag accepts a verification result.
-export function publishPrepared(prepared, gh = productionGh) {
+export function publishPrepared(prepared, gh = productionGh, uploadTransport = 'gh') {
+  requireThat(uploadTransport === 'gh' || uploadTransport === 'wsl-curl', 'Unknown upload transport.');
   requireThat(gh !== productionGh || verifiedPreparations.get(prepared) === JSON.stringify(prepared),
     'Production publication requires the unchanged result of independent preparation.');
   const { snapshot, verification: v } = prepared;
@@ -243,8 +279,10 @@ export function publishPrepared(prepared, gh = productionGh) {
     const present = checkAssets(id);
     if (present.has(file.name)) continue;
     assertUnchanged(snapshot);
-    const result = gh(['release', 'upload', v.tag, file.filename, '--repo', `github.com/${REPOSITORY}`]);
-    requireThat(!result.error && result.status === 0, `GitHub upload failed; stopped without retry, overwrite or cleanup (${transportFailure(result)}).`);
+    const result = uploadTransport === 'wsl-curl'
+      ? uploadWithWslCurl(file, id)
+      : gh(['release', 'upload', v.tag, file.filename, '--repo', `github.com/${REPOSITORY}`]);
+    requireThat(!result.error && result.status === 0, `GitHub upload failed; stopped without retry, overwrite or cleanup (${uploadTransport === 'wsl-curl' ? result.stderr : transportFailure(result)}).`);
     assertUnchanged(snapshot);
     requireThat(checkAssets(id).has(file.name), 'Uploaded asset could not be independently verified.');
   }
@@ -262,25 +300,30 @@ export function publishPrepared(prepared, gh = productionGh) {
 }
 
 export function parseArguments(args) {
-  const result = { publish: false };
+  const result = { publish: false, uploadTransport: 'gh' };
+  let explicitTransport = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--publish') { requireThat(!result.publish, 'Repeated --publish.'); result.publish = true; }
-    else if (arg === '--request' || arg === '--asset-dir') {
+    else if (arg === '--upload-transport') {
+      requireThat(!explicitTransport && ['gh', 'wsl-curl'].includes(args[i + 1]), 'Missing, repeated or unknown upload transport.');
+      result.uploadTransport = args[++i];
+      explicitTransport = true;
+    } else if (arg === '--request' || arg === '--asset-dir') {
       const key = arg === '--request' ? 'requestPath' : 'assetDirectory';
       requireThat(!result[key] && args[i + 1] && !args[i + 1].startsWith('--'), 'Missing or repeated path argument.');
       result[key] = args[++i];
-    } else throw new Error('Only --request, --asset-dir and explicit --publish are supported.');
+    } else throw new Error('Only --request, --asset-dir, --upload-transport and explicit --publish are supported.');
   }
   requireThat(result.requestPath && result.assetDirectory,
-    'Usage: node publish_local_preview.mjs --request <Windows JSON path> --asset-dir <Windows directory> [--publish]');
+    'Usage: node publish_local_preview.mjs --request <Windows JSON path> --asset-dir <Windows directory> [--publish] [--upload-transport gh|wsl-curl]');
   return result;
 }
 
 function main(args) {
   const options = parseArguments(args);
   const prepared = preparePreview(options.requestPath, options.assetDirectory);
-  const result = options.publish ? publishPrepared(prepared) : {
+  const result = options.publish ? publishPrepared(prepared, productionGh, options.uploadTransport) : {
     ...prepared.verification, protocol: 'tden:node-local-preview-publication:v1',
     result: 'dry-run-verified', repository: REPOSITORY,
   };

@@ -104,6 +104,18 @@ test('default is verification-only; no stable, repository override or verifier b
   }
 });
 
+test('alternate local transport is explicit and cannot bypass preparation or change the target', () => {
+  assert.equal(parseArguments(['--request', 'r', '--asset-dir', 'a']).uploadTransport, 'gh');
+  const value = parseArguments(['--request', 'r', '--asset-dir', 'a', '--upload-transport', 'wsl-curl']);
+  assert.equal(value.uploadTransport, 'wsl-curl');
+  assert.equal(value.publish, false);
+  for (const tail of [['--upload-transport'], ['--upload-transport', 'external'],
+    ['--upload-transport', 'wsl-curl', '--upload-transport', 'gh']]) {
+    assert.throws(() => parseArguments(['--request', 'r', '--asset-dir', 'a', ...tail]));
+  }
+  assert.throws(() => publishPrepared({}, undefined, 'wsl-curl'), /independent preparation/);
+});
+
 test('new preview creates exact commit tag, drafts, uploads verified bytes, then publishes prerelease', t => {
   const prepared = fixture(t), gh = fakeGitHub(prepared);
   const result = publishPrepared(prepared, gh.runner);
@@ -152,9 +164,83 @@ test('ambiguous draft listing stops before any remote write', t => {
 
 test('upload diagnostics expose known error classes and a digest without raw text', () => {
   const diagnostic = transportFailure({ status: 1, stderr: 'private URL and secret text: unexpected EOF (HTTP 502)' });
-  assert.match(diagnostic, /unexpected EOF\|HTTP 502/);
+  assert.match(diagnostic, /UNEXPECTED_EOF\|HTTP 502/);
   assert.match(diagnostic, /stderr_sha256=[0-9a-f]{64}/);
   assert.ok(!diagnostic.includes('private') && !diagnostic.includes('secret'));
+});
+
+test('transport diagnostics preserve allowlisted child process code and signal', () => {
+  const diagnostic = transportFailure({ status: null, error: { code: 'ETIMEDOUT', message: 'private path' },
+    signal: 'SIGTERM', stderr: '' });
+  assert.match(diagnostic, /exit=no-exit, process=ETIMEDOUT, signal=SIGTERM, transport=unclassified/);
+  assert.match(diagnostic, new RegExp(`stderr_sha256=${sha('')}$`));
+  for (const code of ['ENOBUFS', 'ENOENT', 'EACCES', 'ECONNRESET', 'ECONNREFUSED']) {
+    assert.ok(transportFailure({ status: null, error: { code }, stderr: '' }).includes(`process=${code},`));
+  }
+});
+
+test('transport diagnostics classify Windows socket failures without reproducing their text', () => {
+  for (const [message, expected] of [
+    ['wsasend: An existing connection was forcibly closed by the remote host.', ['SOCKET_IO', 'SOCKET_RESET']],
+    ['wsarecv: An established connection was aborted by the software in your host machine.', ['SOCKET_IO', 'SOCKET_ABORT']],
+    ['connectex: No connection could be made because the target machine actively refused it.', ['SOCKET_REFUSED']],
+    ['connectex: The connected host has failed to respond.', ['SOCKET_TIMEOUT']],
+    ['WSAECONNRESET WSAECONNABORTED WSAETIMEDOUT WSAECONNREFUSED', ['SOCKET_RESET', 'SOCKET_ABORT', 'SOCKET_TIMEOUT', 'SOCKET_REFUSED']],
+    ['i/o timeout', ['SOCKET_TIMEOUT']],
+    ['broken pipe', ['BROKEN_PIPE']],
+  ]) {
+    const diagnostic = transportFailure({ status: 1, stderr: message });
+    for (const label of expected) assert.ok(diagnostic.includes(label), `${message}: missing ${label}`);
+  }
+});
+
+test('transport diagnostics classify DNS certificate TLS and HTTP2 families', () => {
+  for (const [message, expected] of [
+    ['dial tcp: lookup uploads.github.com: no such host', 'DNS'],
+    ['EAI_AGAIN: temporary failure in name resolution', 'DNS'],
+    ['x509: certificate signed by unknown authority', 'TLS_CERTIFICATE'],
+    ['schannel: CRYPT_E_REVOCATION_OFFLINE (0x80092013)', 'CERT_REVOCATION_OFFLINE'],
+    ['TLS handshake timeout', 'TLS_HANDSHAKE'],
+    ['remote error: tls: handshake failure', 'TLS_HANDSHAKE'],
+    ['http2: stream error: REFUSED_STREAM', 'HTTP2'],
+    ['HTTP/2 GOAWAY', 'HTTP2'],
+    ['stream error: stream ID 1; INTERNAL_ERROR', 'HTTP2'],
+    ['context deadline exceeded', 'REQUEST_TIMEOUT'],
+    ['unexpected EOF', 'UNEXPECTED_EOF'],
+    ['EOF', 'EOF'],
+    ['eof', 'EOF'],
+  ]) {
+    assert.ok(transportFailure({ status: 1, stderr: message }).includes(`transport=${expected}`), message);
+  }
+});
+
+test('transport HTTP errors require explicit HTTP status format and remain bounded', () => {
+  const message = 'private numbers 401 502, HTTP 200, HTTP 5027, (HTTP 503), HTTP/1.1 502, http 503';
+  const diagnostic = transportFailure({ status: 1, stderr: message });
+  assert.match(diagnostic, /transport=HTTP 502\|HTTP 503,/);
+  assert.ok(!diagnostic.includes('HTTP 200') && !diagnostic.includes('HTTP 401') && !diagnostic.includes('5027'));
+  const many = Array.from({ length: 200 }, (_, i) => `HTTP ${400 + i}`).join('\n').repeat(100);
+  const bounded = transportFailure({ status: 1, stderr: many });
+  assert.ok(bounded.length < 1024);
+  assert.match(bounded, /HTTP_STATUS_LIMIT/);
+  assert.match(bounded, new RegExp(`stderr_sha256=${sha(many)}$`));
+});
+
+test('transport diagnostics never expose arbitrary process fields secrets paths or URLs', () => {
+  const privateText = 'SECRET_SENTINEL https://private.invalid/?token=abc C:\\private\\key /home/private/key Authorization: Bearer abc';
+  const diagnostic = transportFailure({ status: privateText, error: { code: privateText, message: privateText, path: privateText },
+    signal: privateText, stdout: privateText, stderr: privateText.repeat(10000) });
+  assert.match(diagnostic, /^exit=no-exit, process=unclassified, signal=unclassified, transport=unclassified, stderr_sha256=[0-9a-f]{64}$/);
+  for (const value of ['SECRET', 'private', 'https:', 'Bearer', 'abc']) assert.ok(!diagnostic.includes(value));
+  assert.ok(diagnostic.length < 1024);
+});
+
+test('transport diagnostics retain empty and unknown failures without inventing a cause', () => {
+  assert.match(transportFailure({ status: 1, stderr: 'unknown remote condition' }),
+    /^exit=1, process=none, signal=none, transport=unclassified, stderr_sha256=/);
+  assert.match(transportFailure({ status: -1, error: {}, signal: 'SIGKILL', stderr: '' }),
+    /^exit=-1, process=unclassified, signal=SIGKILL, transport=unclassified, stderr_sha256=/);
+  assert.match(transportFailure({ status: Number.MAX_VALUE, stderr: '' }), /^exit=no-exit,/);
 });
 
 test('published missing asset cannot be repaired', t => {
