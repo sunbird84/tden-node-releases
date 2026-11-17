@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { ASSET_NAMES, REPOSITORY, captureInputs, assertUnchanged, validateVerification,
-  publishPrepared, parseArguments, childEnvironment, verificationFailure } from './publish_local_preview.mjs';
+  publishPrepared, parseArguments, childEnvironment, verificationFailure, transportFailure } from './publish_local_preview.mjs';
 
 // Synthetic verifier results exercise the transport boundary, not package trust.
 // The CLI has no injected verifier or option to consume these test results.
@@ -34,7 +34,7 @@ test('accepts asset keys sorted by the real Python JSON serializer', t => {
   assert.doesNotThrow(() => validateVerification(prepared.verification, prepared.snapshot));
 });
 
-function fakeGitHub(prepared, { existing = false, draft = true, count = 0, hook, failUpload = false } = {}) {
+function fakeGitHub(prepared, { existing = false, draft = true, count = 0, hook, failUpload = false, hideDraftByTag = false } = {}) {
   const v = prepared.verification;
   let serial = 20;
   const state = { calls: [], uploads: [], writes: [], tagCommit: existing ? v.control_commit : null,
@@ -66,7 +66,8 @@ function fakeGitHub(prepared, { existing = false, draft = true, count = 0, hook,
     const body = input === undefined ? undefined : JSON.parse(input);
     if (method !== 'GET') state.writes.push({ method, endpoint, body });
     hook?.({ kind: 'api', method, endpoint, state });
-    if (method === 'GET' && endpoint.startsWith('releases/tags/')) return state.release ? ok(state.release) : missing();
+    if (method === 'GET' && endpoint.startsWith('releases/tags/')) return state.release && !(hideDraftByTag && state.release.draft) ? ok(state.release) : missing();
+    if (method === 'GET' && endpoint.startsWith('releases?per_page=100&page=')) return ok(state.release ? [state.release] : []);
     if (method === 'GET' && endpoint.startsWith('commits/')) return ok({ sha: v.control_commit });
     if (method === 'GET' && endpoint.startsWith('git/ref/tags/')) return state.tagCommit
       ? ok({ ref: `refs/tags/${v.tag}`, object: { type: 'commit', sha: state.tagCommit } }) : missing();
@@ -129,6 +130,31 @@ test('exact draft resumes only missing assets', t => {
   assert.deepEqual(gh.uploads, ASSET_NAMES.slice(1));
   assert.equal(gh.assets[0].id, firstID);
   assert.equal(gh.writes.filter(w => w.method === 'POST').length, 0);
+});
+
+test('finds existing drafts through listing when tag lookup returns the real GitHub 404', t => {
+  const prepared = fixture(t);
+  const github = fakeGitHub(prepared, { existing: true, draft: true, count: 1, hideDraftByTag: true });
+  publishPrepared(prepared, github.runner);
+  assert.equal(github.uploads.length, 2);
+  assert.ok(!github.writes.some(call => call.method === 'POST' && call.endpoint === 'releases'));
+});
+
+test('ambiguous draft listing stops before any remote write', t => {
+  const prepared = fixture(t);
+  const github = fakeGitHub(prepared, { existing: true, hideDraftByTag: true });
+  const runner = (args, input) => args[5]?.includes('releases?per_page=100')
+    ? { status: 0, stdout: JSON.stringify([github.release, { ...github.release, id: 8 }]) }
+    : github.runner(args, input);
+  assert.throws(() => publishPrepared(prepared, runner), /Multiple releases/);
+  assert.equal(github.writes.length, 0);
+});
+
+test('upload diagnostics expose known error classes and a digest without raw text', () => {
+  const diagnostic = transportFailure({ status: 1, stderr: 'private URL and secret text: unexpected EOF (HTTP 502)' });
+  assert.match(diagnostic, /unexpected EOF\|HTTP 502/);
+  assert.match(diagnostic, /stderr_sha256=[0-9a-f]{64}/);
+  assert.ok(!diagnostic.includes('private') && !diagnostic.includes('secret'));
 });
 
 test('published missing asset cannot be repaired', t => {

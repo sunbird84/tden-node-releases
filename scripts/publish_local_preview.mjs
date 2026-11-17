@@ -104,6 +104,12 @@ export function verificationFailure(result) {
   return `Independent local candidate verification failed (exit=${exit}${processCode}${safeCode ? `, code=${safeCode}` : ''}, stderr_sha256=${evidence}).`;
 }
 
+export function transportFailure(result) {
+  const stderr = String(result.stderr ?? '');
+  const classes = [...new Set(stderr.match(/HTTP [45][0-9]{2}|TLS handshake timeout|context deadline exceeded|connection reset|i\/o timeout|unexpected EOF|broken pipe|EOF/gi) ?? [])];
+  return `exit=${Number.isInteger(result.status) ? result.status : 'no-exit'}, transport=${classes.join('|') || 'unclassified'}, stderr_sha256=${crypto.createHash('sha256').update(stderr).digest('hex')}`;
+}
+
 function wslPath(filename) {
   requireThat(/^[A-Za-z]:[\\/]/.test(filename), 'The Windows CLI requires absolute drive paths.');
   return `/mnt/${filename[0].toLowerCase()}/${filename.slice(3).replaceAll('\\', '/')}`;
@@ -140,7 +146,7 @@ export function publishPrepared(prepared, gh = productionGh) {
     if (body !== undefined) args.push('--input', '-');
     const result = gh(args, body === undefined ? undefined : JSON.stringify(body));
     if (!result.error && result.status === 1 && missing && /\(HTTP 404\)/.test(result.stderr ?? '')) return null;
-    requireThat(!result.error && result.status === 0, `GitHub ${method} failed; stopped without retry or cleanup.`);
+    requireThat(!result.error && result.status === 0, `GitHub ${method} failed; stopped without retry or cleanup (${transportFailure(result)}).`);
     try { return JSON.parse(result.stdout); } catch { throw new Error('GitHub returned invalid JSON.'); }
   };
   const tagEndpoint = `git/ref/tags/${encodeURIComponent(v.tag)}`;
@@ -187,6 +193,22 @@ export function publishPrepared(prepared, gh = productionGh) {
   }
 
   let release = api('GET', `releases/tags/${encodeURIComponent(v.tag)}`, undefined, true);
+  if (!release) {
+    // The tag endpoint returns published releases only. Authorized listings include drafts.
+    // https://docs.github.com/en/rest/releases/releases#list-releases
+    const matches = [];
+    let complete = false;
+    for (let page = 1; page <= 10; page++) {
+      const entries = api('GET', `releases?per_page=100&page=${page}`);
+      requireThat(Array.isArray(entries) && entries.length <= 100
+        && entries.every(entry => entry && typeof entry.tag_name === 'string'), 'Release listing is invalid.');
+      matches.push(...entries.filter(entry => entry.tag_name === v.tag));
+      requireThat(matches.length <= 1, 'Multiple releases use the candidate tag; stopped without mutation.');
+      if (entries.length < 100) { complete = true; break; }
+    }
+    requireThat(complete, 'Release listing exceeds the bounded scan; stopped without mutation.');
+    release = matches[0] ?? null;
+  }
   if (release) {
     checkRelease(release);
     checkRef();
@@ -222,7 +244,7 @@ export function publishPrepared(prepared, gh = productionGh) {
     if (present.has(file.name)) continue;
     assertUnchanged(snapshot);
     const result = gh(['release', 'upload', v.tag, file.filename, '--repo', `github.com/${REPOSITORY}`]);
-    requireThat(!result.error && result.status === 0, 'GitHub upload failed; stopped without retry, overwrite or cleanup.');
+    requireThat(!result.error && result.status === 0, `GitHub upload failed; stopped without retry, overwrite or cleanup (${transportFailure(result)}).`);
     assertUnchanged(snapshot);
     requireThat(checkAssets(id).has(file.name), 'Uploaded asset could not be independently verified.');
   }
